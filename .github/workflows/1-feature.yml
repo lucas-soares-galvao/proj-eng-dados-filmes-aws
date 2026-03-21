@@ -7,7 +7,8 @@ on:
 
 permissions:
   id-token: write
-  contents: read
+  contents: write
+  pull-requests: write
 
 jobs:
   create-pr:
@@ -15,14 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ github.ref_name }} # Checkout da branch de origem
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
 
       - name: Create Pull Request
         uses: peter-evans/create-pull-request@v5
         with:
-          token: ${{ secrets.PAT_GITHUB_TOKEN }} # Token de acesso para criar o PR
-          branch: ${{ github.ref_name }} # A branch que será enviada
-          base: develop # A branch de destino (ex: main, master, develop)
+          token: ${{ secrets.PAT_GITHUB_TOKEN }}
+          branch: ${{ github.ref_name }}
+          head: ${{ github.ref_name }}
+          base: develop
           title: "develop <- ${{ github.ref_name }}"
           body: "PR criado automaticamente a partir de novos commits."
           labels: automatic, pr
