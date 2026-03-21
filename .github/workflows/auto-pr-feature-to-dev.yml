@@ -5,6 +5,9 @@ on:
     branches:
       - 'feature/**'
 
+permissions:
+  pull-requests: write
+
 jobs:
   create-pr:
     runs-on: ubuntu-latest
@@ -20,11 +23,11 @@ jobs:
           PR_EXISTS=$(gh pr list --head ${{ github.ref_name }} --base dev --json number --jq 'length')
           echo "pr_exists=$PR_EXISTS" >> $GITHUB_OUTPUT
         env:
-          TOKEN: ${{ secrets.TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Create PR if not exists
         if: steps.check-pr.outputs.pr_exists == '0'
         run: |
           gh pr create --title "dev <- ${{ github.ref_name }}" --body "Auto-generated PR from feature branch" --head ${{ github.ref_name }} --base dev
         env:
-          TOKEN: ${{ secrets.TOKEN }}
+          GH_TOKEN: ${{ github.token }}
