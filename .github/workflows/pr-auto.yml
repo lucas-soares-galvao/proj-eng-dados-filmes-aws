@@ -1,12 +1,11 @@
-name: Auto PR Pipeline (Reusable)
+name: Auto PR Pipeline
 
 on:
-  workflow_call:
-    inputs:
-      github-ref-name:
-        description: 'Branch atual'
-        required: true
-        type: string
+  push:
+    branches:
+      - 'feature/**'
+      - develop
+      - release
 
 permissions:
   contents: write
@@ -17,7 +16,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 🔹 Checkout
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -25,23 +23,18 @@ jobs:
       - name: Define base branch
         id: branch
         run: |
-          REF="${{ inputs.github-ref-name }}"
-          BASE=""
-
-          if [[ "$REF" == feature/* ]]; then
-            BASE="develop"
-          elif [[ "$REF" == "develop" ]]; then
-            BASE="release"
-          elif [[ "$REF" == "release" ]]; then
-            BASE="main"
+          if [[ "${GITHUB_REF_NAME}" == feature/* ]]; then
+            echo "base=develop" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_NAME}" == "develop" ]]; then
+            echo "base=release" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF_NAME}" == "release" ]]; then
+            echo "base=main" >> $GITHUB_OUTPUT
           else
-            echo "Branch '$REF' não suportada, pulando..."
-            exit 0
+            echo "Branch não suportada"
+            exit 1
           fi
 
-          echo "base=$BASE" >> $GITHUB_OUTPUT
-
-      # 🔹 (Opcional) Terraform Validate
+      # (Opcional) Terraform validate
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
@@ -51,33 +44,25 @@ jobs:
           terraform init -backend=false
           terraform validate
 
-      # 🔀 Criar ou atualizar PR (com proteção)
+      # 🔀 Criar ou atualizar PR
       - name: Create or Update PR
         run: |
           BASE=${{ steps.branch.outputs.base }}
-          HEAD=${{ inputs.github-ref-name }}
-
-          # 🔹 Evita erro: No commits between branches
-          DIFF=$(git log "$BASE..$HEAD" --oneline)
-          if [ -z "$DIFF" ]; then
-            echo "Nenhum commit entre $BASE e $HEAD. Pulando PR."
-            exit 0
-          fi
+          HEAD=${{ github.ref_name }}
 
           PR_NUMBER=$(gh pr list --base "$BASE" --head "$HEAD" --json number --jq '.[0].number // ""')
 
           if [ -z "$PR_NUMBER" ]; then
-            echo "Criando PR..."
             gh pr create \
               --base "$BASE" \
               --head "$HEAD" \
               --title "Auto PR: $HEAD → $BASE" \
               --body "PR criado automaticamente."
           else
-            echo "Atualizando PR existente..."
             gh pr edit "$PR_NUMBER" \
               --title "Auto PR: $HEAD → $BASE" \
               --body "PR atualizado automaticamente."
+            echo "PR já existente: #$PR_NUMBER"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
