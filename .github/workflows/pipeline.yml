@@ -7,11 +7,7 @@ on:
     branches: [develop, release, main]
 
 env:
-  ENVIRONMENT: ${{ 
-    github.ref_name == 'develop' && 'dev' ||
-    github.ref_name == 'release' && 'hom' ||
-    github.ref_name == 'main' && 'prod'
-  }}
+  ENVIRONMENT: ${{ github.ref_name == 'develop' && 'dev' || github.ref_name == 'release' && 'hom' || github.ref_name == 'main' && 'prod' }}
 
 jobs:
 
