@@ -24,7 +24,7 @@ jobs:
   # 🔹 Auto PR
   auto-pr:
     if: github.actor != 'github-actions[bot]'
-    uses: ./.github/workflows/auto-pr-reusable.yml
+    uses: ./.github/workflows/pr-origin-destiny.yml
     with:
       github-ref-name: ${{ github.ref_name }}
     secrets:
