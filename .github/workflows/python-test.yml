@@ -1,7 +1,6 @@
-name: Reusable Test
+name: Test Python
 
 on:
-  workflow_call:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
