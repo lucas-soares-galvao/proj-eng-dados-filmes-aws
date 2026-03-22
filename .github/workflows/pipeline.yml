@@ -30,3 +30,6 @@ jobs:
     uses: ./.github/workflows/pr-auto.yml
     with:
       branch_name: ${{ github.ref_name }}
+    permissions:
+      contents: write
+      pull-requests: write
