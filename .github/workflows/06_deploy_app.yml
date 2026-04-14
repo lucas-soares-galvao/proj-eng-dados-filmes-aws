@@ -139,7 +139,7 @@ jobs:
           ENV="${{ steps.determine-env.outputs.environment }}"
           BUCKET="${{ steps.determine-targets.outputs.artifact_bucket }}"
           REPO_NAME="${GITHUB_REPOSITORY##*/}"
-          PREFIX="artifacts/${REPO_NAME}/${ENV}/"
+          PREFIX="glue/${REPO_NAME}/${ENV}/"
           mkdir -p artifacts
 
           echo "📦 Baixando artifacts do S3: s3://$BUCKET/$PREFIX"
