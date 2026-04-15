@@ -1,5 +1,8 @@
-resource "aws_s3_bucket" "bucket" {
-    bucket = var.bucket_name
+resource "aws_s3_object" "deploy_scripts_bucket" {
+    bucket = "lsg-sa-east-1-bucket-aux"
+    key = "${local.glue_src_path}/${var.env}/script.py"
+    source = "TestDeployScript.py"
+    etag = filemd5("${local.glue_src_path}/${var.env}/script.py")
 }
 
 resource "aws_glue_job" "etl_job" {
