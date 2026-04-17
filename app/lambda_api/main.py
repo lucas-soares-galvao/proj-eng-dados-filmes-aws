@@ -1,6 +1,6 @@
 """Ponto de entrada da Lambda de exemplo."""
 
-from src.utils import eh_par
+from .src.utils import eh_par
 
 def processar_numero(numero):
     """Encapsula a regra de negocio para facilitar reutilizacao e testes."""
