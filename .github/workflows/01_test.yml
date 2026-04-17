@@ -22,6 +22,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           root = Path("test")
@@ -36,7 +37,7 @@ jobs:
           if not services:
               raise SystemExit("Nenhum diretório de serviço encontrado em test/.")
 
-          with open("$GITHUB_OUTPUT", "a", encoding="utf-8") as github_output:
+            with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as github_output:
               github_output.write(f"services={json.dumps(services)}\n")
           PY
 
