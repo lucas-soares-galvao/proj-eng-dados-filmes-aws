@@ -7,9 +7,6 @@ import urllib.request
 from importlib import import_module
 
 
-def _normalizar_nome_chave(nome):
-    return str(nome).strip().lower().replace("-", "_")
-
 def obter_secret(secret_id=None, secrets_client=None):
     """Busca um secret no AWS Secrets Manager."""
     if secrets_client is None:
@@ -32,33 +29,12 @@ def obter_secret(secret_id=None, secrets_client=None):
 
 
 def obter_tmdb_api_key(secret_id=None, secrets_client=None):
-    """Extrai uma credencial da TMDB (API key ou access token)."""
+    """Extrai a credencial da TMDB do secret."""
     payload = obter_secret(secret_id=secret_id, secrets_client=secrets_client)
-    if not isinstance(payload, dict):
-        raise ValueError("Formato invalido do secret da TMDB.")
-
-    credencial = None
-
-    # Campos preferenciais mais comuns.
-    for key in ("api_key", "tmdb_api_key", "access_token", "tmdb_access_token"):
-        valor = payload.get(key)
-        if isinstance(valor, str) and valor.strip():
-            credencial = valor.strip()
-            break
-
-    # Fallback para chaves com sufixos/prefixos, ex.: tmdb_api_key_dev.
-    if not credencial:
-        for key, valor in payload.items():
-            key_normalizada = _normalizar_nome_chave(key)
-            if not (isinstance(valor, str) and valor.strip()):
-                continue
-            if "api_key" in key_normalizada or "access_token" in key_normalizada:
-                credencial = valor.strip()
-                break
-
-    if not credencial:
+    credencial = payload.get("tmdb_api_key") or payload.get("api_key")
+    if not isinstance(credencial, str) or not credencial.strip():
         raise ValueError("Credencial da TMDB nao encontrada no secret.")
-    return credencial
+    return credencial.strip()
 
 
 def _is_bearer_token(credencial):
@@ -77,7 +53,7 @@ def buscar_filme_tmdb(query, api_key, timeout=10, urlopen_func=None):
         raise ValueError("TMDB API key nao informada.")
 
     params = urllib.parse.urlencode({"query": query, "language": "pt-BR"})
-    url = f"https://api.themoviedb.org/3/search/movie?{params}"
+    url = f"https://api.themoviedb.org/3/account/{account_id}/movies?{params}"
 
     request = url
     if _is_bearer_token(api_key):
@@ -96,7 +72,7 @@ def buscar_filme_tmdb(query, api_key, timeout=10, urlopen_func=None):
                 "language": "pt-BR",
             }
         )
-        request = f"https://api.themoviedb.org/3/search/movie?{params_com_key}"
+        request = f"https://api.themoviedb.org/3/account/{account_id}/movies?{params_com_key}"
 
     request_func = urlopen_func or urllib.request.urlopen
 
