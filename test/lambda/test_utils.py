@@ -202,18 +202,18 @@ class TestTMDBIntegrationUtils(unittest.TestCase):
         self.assertEqual(result["api_key"], "abc123")
 
     def test_obter_tmdb_api_key(self):
-        client = _FakeSecretsManagerClient('{"api_key":"abc123"}')
+        client = _FakeSecretsManagerClient('{"tmdb_api_key":"abc123"}')
         result = obter_tmdb_api_key(secret_id="arn:aws:secretsmanager:::secret:tmdb", secrets_client=client)
         self.assertEqual(result, "abc123")
 
-    def test_obter_tmdb_api_key_com_chave_sufixo_ambiente(self):
-        client = _FakeSecretsManagerClient('{"tmdb_api_key_dev":"abc123"}')
+    def test_obter_tmdb_api_key_fallback_api_key(self):
+        client = _FakeSecretsManagerClient('{"api_key":"abc123"}')
         result = obter_tmdb_api_key(secret_id="arn:aws:secretsmanager:::secret:tmdb", secrets_client=client)
         self.assertEqual(result, "abc123")
 
     def test_obter_tmdb_api_key_com_access_token(self):
         token = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature"
-        client = _FakeSecretsManagerClient('{"access_token":"' + token + '"}')
+        client = _FakeSecretsManagerClient('{"tmdb_api_key":"' + token + '"}')
         result = obter_tmdb_api_key(secret_id="arn:aws:secretsmanager:::secret:tmdb", secrets_client=client)
         self.assertEqual(result, token)
 
