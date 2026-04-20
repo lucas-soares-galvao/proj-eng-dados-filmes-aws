@@ -251,6 +251,76 @@ class TestCargaSorParticionada(unittest.TestCase):
         self.assertTrue(any("year=2000/month=01" in key for key in keys))
         self.assertTrue(any("year=2001/month=02" in key for key in keys))
 
+    def test_carregar_tmdb_por_ano_auto_paginas_quando_zero(self):
+        chamadas = []
+
+        def fake_buscar_por_ano_func(ano, api_key, page, timeout, urlopen_func):
+            chamadas.append((ano, page))
+            if page == 1:
+                return {
+                    "total_pages": 2,
+                    "results": [
+                        {"id": 1, "release_date": "2025-01-10", "title": "A"},
+                    ],
+                }
+            return {
+                "total_pages": 2,
+                "results": [
+                    {"id": 2, "release_date": "2025-05-11", "title": "B"},
+                ],
+            }
+
+        mock_s3_client = MagicMock()
+
+        resumo = carregar_tmdb_por_ano_e_salvar_sor(
+            api_key="abc123",
+            bucket_name="bucket-sor",
+            ano_inicio=2025,
+            ano_fim=2025,
+            paginas_por_ano=0,
+            s3_prefix="tmdb/discover_movie",
+            s3_client=mock_s3_client,
+            buscar_por_ano_func=fake_buscar_por_ano_func,
+        )
+
+        self.assertEqual(chamadas, [(2025, 1), (2025, 2)])
+        self.assertEqual(resumo["filmes_encontrados"], 2)
+        self.assertEqual(resumo["particoes_geradas"], 2)
+
+        keys = [call.kwargs["Key"] for call in mock_s3_client.put_object.call_args_list]
+        self.assertTrue(any("year=2025/month=01" in key for key in keys))
+        self.assertTrue(any("year=2025/month=05" in key for key in keys))
+
+    def test_carregar_tmdb_por_ano_respeita_max_total_paginas(self):
+        chamadas = []
+
+        def fake_buscar_por_ano_func(ano, api_key, page, timeout, urlopen_func):
+            chamadas.append((ano, page))
+            return {
+                "total_pages": 3,
+                "results": [
+                    {"id": f"{ano}-{page}", "release_date": f"{ano}-03-10", "title": "A"},
+                ],
+            }
+
+        mock_s3_client = MagicMock()
+
+        resumo = carregar_tmdb_por_ano_e_salvar_sor(
+            api_key="abc123",
+            bucket_name="bucket-sor",
+            ano_inicio=2024,
+            ano_fim=2025,
+            paginas_por_ano=0,
+            max_total_paginas=2,
+            s3_prefix="tmdb/discover_movie",
+            s3_client=mock_s3_client,
+            buscar_por_ano_func=fake_buscar_por_ano_func,
+        )
+
+        self.assertEqual(chamadas, [(2024, 1), (2024, 2)])
+        self.assertEqual(resumo["paginas_processadas"], 2)
+        self.assertEqual(resumo["filmes_encontrados"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

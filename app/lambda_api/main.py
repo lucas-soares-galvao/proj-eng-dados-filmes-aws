@@ -25,12 +25,17 @@ def lambda_handler(event, context):
             tmdb_result = buscar_filme_tmdb(query=query, api_key=tmdb_api_key)
 
         if executar_ingestao_sor:
+            max_total_paginas = event.get("max_total_paginas")
+            if max_total_paginas is not None:
+                max_total_paginas = int(max_total_paginas)
+
             sor_ingestao = carregar_tmdb_por_ano_e_salvar_sor(
                 api_key=tmdb_api_key,
                 bucket_name=os.getenv("S3_BUCKET_SOR"),
                 ano_inicio=int(event.get("ano_inicio", 2000)),
                 ano_fim=int(event.get("ano_fim", datetime.utcnow().year)),
                 paginas_por_ano=int(event.get("paginas_por_ano", 1)),
+                max_total_paginas=max_total_paginas,
                 s3_prefix=event.get("s3_prefix", "tmdb/discover_movie"),
             )
     except Exception as exc:

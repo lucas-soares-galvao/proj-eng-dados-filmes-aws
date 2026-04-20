@@ -167,13 +167,19 @@ def carregar_tmdb_por_ano_e_salvar_sor(
     ano_inicio=2000,
     ano_fim=None,
     paginas_por_ano=1,
+    max_total_paginas=None,
     s3_prefix="tmdb/discover_movie",
     timeout=10,
     urlopen_func=None,
     s3_client=None,
     buscar_por_ano_func=None,
 ):
-    """Busca filmes por ano na TMDB e grava no S3 em particoes year/month."""
+    """Busca filmes por ano na TMDB e grava no S3 em particoes year/month.
+
+    Se paginas_por_ano <= 0, busca automaticamente todas as paginas disponiveis
+    do ano (limitado a 500, limite da API da TMDB).
+    Se max_total_paginas for informado, interrompe a coleta ao atingir o limite.
+    """
     if not api_key:
         raise ValueError("TMDB API key nao informada.")
     if not bucket_name:
@@ -182,12 +188,39 @@ def carregar_tmdb_por_ano_e_salvar_sor(
     ano_fim = ano_fim or datetime.utcnow().year
     if ano_inicio > ano_fim:
         raise ValueError("ano_inicio nao pode ser maior que ano_fim.")
+    if max_total_paginas is not None and max_total_paginas <= 0:
+        raise ValueError("max_total_paginas deve ser maior que zero.")
 
     buscar_func = buscar_por_ano_func or buscar_filmes_tmdb_por_ano
     filmes_coletados = []
+    paginas_processadas = 0
 
     for ano in range(ano_inicio, ano_fim + 1):
-        for pagina in range(1, paginas_por_ano + 1):
+        if max_total_paginas is not None and paginas_processadas >= max_total_paginas:
+            break
+
+        primeira_pagina = buscar_func(
+            ano=ano,
+            api_key=api_key,
+            page=1,
+            timeout=timeout,
+            urlopen_func=urlopen_func,
+        )
+        filmes_coletados.extend(primeira_pagina.get("results", []))
+        paginas_processadas += 1
+
+        total_pages = int(primeira_pagina.get("total_pages", 1) or 1)
+        total_pages = max(1, min(total_pages, 500))
+
+        if paginas_por_ano <= 0:
+            limite_paginas = total_pages
+        else:
+            limite_paginas = min(paginas_por_ano, total_pages)
+
+        for pagina in range(2, limite_paginas + 1):
+            if max_total_paginas is not None and paginas_processadas >= max_total_paginas:
+                break
+
             response = buscar_func(
                 ano=ano,
                 api_key=api_key,
@@ -196,13 +229,13 @@ def carregar_tmdb_por_ano_e_salvar_sor(
                 urlopen_func=urlopen_func,
             )
             filmes_coletados.extend(response.get("results", []))
+            paginas_processadas += 1
 
     particoes = _particionar_filmes_por_ano_mes(filmes_coletados)
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
     objetos_gravados = 0
 
     for (ano, mes), filmes in particoes.items():
-        s3_key = f"{s3_prefix}/year={ano}/month={mes}/movies_{ano}_{mes}_{timestamp}.json"
+        s3_key = f"{s3_prefix}/year={ano}/month={mes}/movies_{ano}_{mes}.json"
         payload = {
             "year": ano,
             "month": mes,
@@ -223,6 +256,8 @@ def carregar_tmdb_por_ano_e_salvar_sor(
         "ano_inicio": ano_inicio,
         "ano_fim": ano_fim,
         "paginas_por_ano": paginas_por_ano,
+        "max_total_paginas": max_total_paginas,
+        "paginas_processadas": paginas_processadas,
         "filmes_encontrados": len(filmes_coletados),
         "particoes_geradas": len(particoes),
         "objetos_s3_gravados": objetos_gravados,
