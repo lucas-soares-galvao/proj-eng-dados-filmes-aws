@@ -25,10 +25,6 @@ def lambda_handler(event, context):
             tmdb_result = buscar_filme_tmdb(query=query, api_key=tmdb_api_key)
 
         if executar_ingestao_sor:
-            max_total_paginas = event.get("max_total_paginas")
-            if max_total_paginas is not None:
-                max_total_paginas = int(max_total_paginas)
-
             ano_fim = int(event.get("ano_fim", datetime.utcnow().year))
             mes_fim_default = datetime.utcnow().month if ano_fim == datetime.utcnow().year else 12
 
@@ -40,10 +36,7 @@ def lambda_handler(event, context):
                 mes_inicio=int(event.get("mes_inicio", 1)),
                 mes_fim=int(event.get("mes_fim", mes_fim_default)),
                 max_meses_por_execucao=int(event.get("max_meses_por_execucao", 3)),
-                paginas_por_ano=int(event.get("paginas_por_ano", 1)),
-                paginas_por_mes=int(event.get("paginas_por_mes", event.get("paginas_por_ano", 1))),
-                max_total_paginas=max_total_paginas,
-                sort_by=event.get("sort_by", "popularity.desc"),
+                paginas_por_mes=int(event.get("paginas_por_mes", 1)),
                 max_retries=int(event.get("max_retries", 3)),
                 s3_prefix=event.get("s3_prefix", "tmdb/discover_movie"),
             )

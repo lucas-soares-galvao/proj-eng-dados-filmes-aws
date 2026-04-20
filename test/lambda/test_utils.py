@@ -1,5 +1,6 @@
 """Testes unitarios das funcoes utilitarias."""
 
+import json
 import os
 import tempfile
 import urllib.error
@@ -204,7 +205,7 @@ class TestTMDBIntegrationUtils(unittest.TestCase):
         def fake_urlopen(url, timeout):
             self.assertIn("primary_release_date.gte=2025-05-01", url)
             self.assertIn("primary_release_date.lte=2025-05-31", url)
-            self.assertIn("sort_by=popularity.desc", url)
+            self.assertIn("sort_by=primary_release_date.asc", url)
             self.assertIn("api_key=abc123", url)
             self.assertEqual(timeout, 10)
             return _FakeUrlOpenResponse(payload)
@@ -252,7 +253,7 @@ class TestCargaSorParticionada(unittest.TestCase):
         self.assertEqual(kwargs["Key"], "tmdb/discover_movie/year=2003/month=05/arquivo.json")
 
     def test_carregar_tmdb_por_ano_e_salvar_sor_particiona_year_month(self):
-        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, sort_by, timeout, urlopen_func, max_retries):
+        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, timeout, urlopen_func, max_retries):
             if ano == 2000 and mes == 1:
                 return {
                     "results": [
@@ -275,7 +276,6 @@ class TestCargaSorParticionada(unittest.TestCase):
             bucket_name="bucket-sor",
             ano_inicio=2000,
             ano_fim=2001,
-            paginas_por_ano=1,
             paginas_por_mes=1,
             s3_prefix="tmdb/discover_movie",
             s3_client=mock_s3_client,
@@ -293,7 +293,7 @@ class TestCargaSorParticionada(unittest.TestCase):
     def test_carregar_tmdb_por_ano_auto_paginas_quando_zero(self):
         chamadas = []
 
-        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, sort_by, timeout, urlopen_func, max_retries):
+        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, timeout, urlopen_func, max_retries):
             chamadas.append((ano, mes, page))
             if mes != 5:
                 return {"total_pages": 1, "results": []}
@@ -318,7 +318,6 @@ class TestCargaSorParticionada(unittest.TestCase):
             bucket_name="bucket-sor",
             ano_inicio=2025,
             ano_fim=2025,
-            paginas_por_ano=0,
             paginas_por_mes=0,
             s3_prefix="tmdb/discover_movie",
             s3_client=mock_s3_client,
@@ -333,10 +332,10 @@ class TestCargaSorParticionada(unittest.TestCase):
         keys = [call.kwargs["Key"] for call in mock_s3_client.put_object.call_args_list]
         self.assertTrue(any("year=2025/month=05" in key for key in keys))
 
-    def test_carregar_tmdb_por_ano_respeita_max_total_paginas(self):
+    def test_carregar_tmdb_por_ano_um_pagina_por_mes(self):
         chamadas = []
 
-        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, sort_by, timeout, urlopen_func, max_retries):
+        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, timeout, urlopen_func, max_retries):
             chamadas.append((ano, mes, page))
             return {
                 "total_pages": 3,
@@ -354,30 +353,51 @@ class TestCargaSorParticionada(unittest.TestCase):
             ano_fim=2024,
             mes_inicio=1,
             mes_fim=2,
-            paginas_por_ano=0,
-            paginas_por_mes=0,
-            max_total_paginas=2,
+            paginas_por_mes=1,
             s3_prefix="tmdb/discover_movie",
             s3_client=mock_s3_client,
             buscar_por_ano_mes_func=fake_buscar_por_ano_mes_func,
         )
 
-        self.assertEqual(
-            chamadas,
-            [
-                (2024, 1, 1),
-                (2024, 1, 2),
-                (2024, 2, 1),
-                (2024, 2, 2),
-            ],
+        self.assertEqual(chamadas, [(2024, 1, 1), (2024, 2, 1)])
+        self.assertEqual(resumo["paginas_processadas"], 2)
+        self.assertEqual(resumo["paginas_processadas_por_mes"]["2024-01"], 1)
+        self.assertEqual(resumo["paginas_processadas_por_mes"]["2024-02"], 1)
+        self.assertEqual(resumo["filmes_encontrados"], 2)
+
+    def test_carregar_tmdb_por_ano_ordena_data_e_popularidade(self):
+        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, timeout, urlopen_func, max_retries):
+            return {
+                "total_pages": 1,
+                "results": [
+                    {"id": 1, "release_date": "2024-01-10", "popularity": 5, "title": "B"},
+                    {"id": 2, "release_date": "2024-01-10", "popularity": 8, "title": "A"},
+                    {"id": 3, "release_date": "2024-01-11", "popularity": 100, "title": "C"},
+                ],
+            }
+
+        mock_s3_client = MagicMock()
+
+        carregar_tmdb_por_ano_e_salvar_sor(
+            api_key="abc123",
+            bucket_name="bucket-sor",
+            ano_inicio=2024,
+            ano_fim=2024,
+            mes_inicio=1,
+            mes_fim=1,
+            paginas_por_mes=1,
+            s3_prefix="tmdb/discover_movie",
+            s3_client=mock_s3_client,
+            buscar_por_ano_mes_func=fake_buscar_por_ano_mes_func,
         )
-        self.assertEqual(resumo["paginas_processadas"], 4)
-        self.assertEqual(resumo["paginas_processadas_por_mes"]["2024-01"], 2)
-        self.assertEqual(resumo["paginas_processadas_por_mes"]["2024-02"], 2)
-        self.assertEqual(resumo["filmes_encontrados"], 4)
+
+        payload_bytes = mock_s3_client.put_object.call_args.kwargs["Body"]
+        payload = json.loads(payload_bytes.decode("utf-8"))
+        titulos = [filme["title"] for filme in payload["items"]]
+        self.assertEqual(titulos, ["A", "B", "C"])
 
     def test_carregar_tmdb_por_ano_retorna_cursor_quando_limita_meses(self):
-        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, sort_by, timeout, urlopen_func, max_retries):
+        def fake_buscar_por_ano_mes_func(ano, mes, api_key, page, timeout, urlopen_func, max_retries):
             return {
                 "total_pages": 1,
                 "results": [
