@@ -1,11 +1,10 @@
 """Testes do modulo principal da aplicacao."""
 
-import os
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from app.glue_etl.main import (
-    main,
+from app.glue_etl.main import main
+from app.glue_etl.src.utils import (
     obter_arg_data_quality_job_name,
     processar_numero,
     processar_arquivo_sor_para_sot,
@@ -31,32 +30,41 @@ class TestMain(unittest.TestCase):
         "app.glue_etl.main.sys.argv",
         [
             "main.py",
-            "--GLUE_DATA_QUALITY_JOB_NAME",
-            "dq-job",
             "--S3_BUCKET_SOR",
             "lsg-sa-east-1-bucket-sor-dev",
             "--S3_BUCKET_SOT",
             "lsg-sa-east-1-bucket-sot-dev",
+            "--GLUE_CATALOG_DATABASE",
+            "tmdb_dev",
+            "--GLUE_CATALOG_TABLE",
+            "movies_sot",
         ],
     )
-    @patch("app.glue_etl.main.processar_arquivo_sor_para_sot")
-    @patch("app.glue_etl.main.chamar_glue_data_quality")
-    def test_main_dispara_data_quality_na_ultima_etapa(self, mock_chamar_dq, mock_processar_arquivo, mock_print):
-        mock_processar_arquivo.return_value = {
-            "bucket": "sot-bucket",
-            "key": "teste_processado.txt",
+    @patch("app.glue_etl.main.carregar_sor_json_para_tabela_sot")
+    def test_main_processa_sot_com_sucesso(self, mock_carregar_sot, mock_print):
+        mock_carregar_sot.return_value = {
+            "catalog_database": "tmdb_dev",
+            "catalog_table": "movies_sot",
             "status": "written"
-        }
-        mock_chamar_dq.return_value = {
-            "data_quality_job_name": "dq-job",
-            "data_quality_job_run_id": "jr-abc",
         }
 
         main()
 
-        mock_processar_arquivo.assert_called_once()
-        mock_chamar_dq.assert_called_once_with(data_quality_job_name="dq-job")
-        self.assertEqual(mock_print.call_count, 3)  # Número, resultado ETL, resultado DQ
+        mock_carregar_sot.assert_called_once_with(
+            s3_bucket_sor="lsg-sa-east-1-bucket-sor-dev",
+            s3_bucket_sot="lsg-sa-east-1-bucket-sot-dev",
+            catalog_database="tmdb_dev",
+            catalog_table="movies_sot",
+            sor_prefix="tmdb/discover_movie/",
+            sot_prefix="tmdb/movies_sot/",
+        )
+        self.assertEqual(mock_print.call_count, 1)
+
+    @patch("app.glue_etl.main.print")
+    @patch("app.glue_etl.main.sys.argv", ["main.py", "--S3_BUCKET_SOR", "sor", "--S3_BUCKET_SOT", "sot"])
+    def test_main_falha_sem_catalog_args(self, _mock_print):
+        with self.assertRaises(ValueError):
+            main()
 
     def test_obter_arg_data_quality_job_name_quando_presente(self):
         argv = ["main.py", "--GLUE_DATA_QUALITY_JOB_NAME", "dq-job"]
@@ -66,8 +74,8 @@ class TestMain(unittest.TestCase):
         argv = ["main.py", "--outra-flag", "valor"]
         self.assertIsNone(obter_arg_data_quality_job_name(argv))
 
-    @patch("app.glue_etl.main.escrever_arquivo_no_s3")
-    @patch("app.glue_etl.main.ler_arquivo_do_s3")
+    @patch("app.glue_etl.src.utils.escrever_arquivo_no_s3")
+    @patch("app.glue_etl.src.utils.ler_arquivo_do_s3")
     def test_processar_arquivo_sor_para_sot_com_sucesso(self, mock_ler, mock_escrever):
         """Testa o processamento bem-sucedido do arquivo SOR para SOT."""
         mock_ler.return_value = "conteudo original"

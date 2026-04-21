@@ -8,7 +8,7 @@ resource "aws_glue_job" "etl_job" {
   timeout           = 30
   number_of_workers = 2
   worker_type       = "G.1X"
-  execution_class   = "STANDARD"
+  execution_class   = "FLEX"
 
   command {
     # Script principal do job no bucket auxiliar.
@@ -25,8 +25,6 @@ resource "aws_glue_job" "etl_job" {
     "--job-language"                     = "python"
     # Bundle com modulos auxiliares importados pelo script principal.
     "--extra-py-files"                   = "s3://${var.s3_bucket_aux}/${var.glue_etl_job_name}/app_bundle.zip"
-    # Nome do job de Data Quality chamado ao final do ETL.
-    "--GLUE_DATA_QUALITY_JOB_NAME"       = var.glue_data_quality_job_name
     # Prefixo customizado para os grupos /<job>/error e /<job>/output.
     "--custom-logGroup-prefix"           = "/${var.glue_etl_job_name}"
     "--enable-metrics"                   = ""
@@ -34,6 +32,10 @@ resource "aws_glue_job" "etl_job" {
     # Buckets S3 para leitura (SOR) e escrita (SOT)
     "--S3_BUCKET_SOR"                    = var.s3_bucket_sor
     "--S3_BUCKET_SOT"                    = var.s3_bucket_sot
+    "--GLUE_CATALOG_DATABASE"            = local.glue_catalog_database_name
+    "--GLUE_CATALOG_TABLE"               = local.glue_catalog_table_movies_sot
+    "--SOR_PREFIX"                       = var.sor_tmdb_prefix
+    "--SOT_PREFIX"                       = var.sot_movies_prefix
   }
 
   # Garanta que artefatos e permissoes existam antes da criacao do job.
@@ -45,6 +47,9 @@ resource "aws_glue_job" "etl_job" {
     aws_iam_role_policy.glue_read_code_from_s3,
     aws_iam_role_policy.glue_write_logs_custom_prefix,
     aws_iam_role_policy.glue_read_sor_write_sot,
+    aws_iam_role_policy.glue_manage_catalog_sot,
+    aws_glue_catalog_database.sot_database,
+    aws_glue_catalog_table.movies_sot,
     aws_cloudwatch_log_group.glue_etl_job_error_log_group,
     aws_cloudwatch_log_group.glue_etl_job_output_log_group
   ]

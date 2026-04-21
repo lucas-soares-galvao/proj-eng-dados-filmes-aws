@@ -8,6 +8,7 @@ from unittest.mock import patch, MagicMock
 from app.glue_etl.src.utils import (
     chamar_glue_data_quality,
     eh_par,
+    limpar_particoes_sot,
     ler_arquivo_do_s3,
     escrever_arquivo_no_s3,
     processar_arquivo_etl,
@@ -195,6 +196,47 @@ class TestEscreverArquivoNoS3(unittest.TestCase):
             mock_import.assert_called_once_with("boto3")
             mock_boto3.client.assert_called_once_with("s3")
             self.assertEqual(resultado["status"], "written")
+
+
+class TestLimparParticoesSot(unittest.TestCase):
+    def test_remove_objetos_das_particoes_informadas(self):
+        mock_s3_client = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.side_effect = [
+            [{"Contents": [{"Key": "tmdb/movies_sot/year=2024/month=01/part-1.parquet"}]}],
+            [{"Contents": [{"Key": "tmdb/movies_sot/year=2024/month=02/part-1.parquet"}]}],
+        ]
+        mock_s3_client.get_paginator.return_value = mock_paginator
+
+        limpar_particoes_sot(
+            bucket_name="bucket-sot",
+            sot_prefix="tmdb/movies_sot/",
+            particoes=[{"year": "2024", "month": "01"}, {"year": "2024", "month": "02"}],
+            s3_client=mock_s3_client,
+        )
+
+        self.assertEqual(mock_s3_client.delete_objects.call_count, 2)
+        primeira_chamada = mock_s3_client.delete_objects.call_args_list[0].kwargs
+        self.assertEqual(primeira_chamada["Bucket"], "bucket-sot")
+        self.assertEqual(
+            primeira_chamada["Delete"]["Objects"][0]["Key"],
+            "tmdb/movies_sot/year=2024/month=01/part-1.parquet",
+        )
+
+    def test_ignora_particoes_sem_year_ou_month(self):
+        mock_s3_client = MagicMock()
+        mock_paginator = MagicMock()
+        mock_s3_client.get_paginator.return_value = mock_paginator
+
+        limpar_particoes_sot(
+            bucket_name="bucket-sot",
+            sot_prefix="tmdb/movies_sot/",
+            particoes=[{"year": "", "month": "01"}, {"year": "2024", "month": None}],
+            s3_client=mock_s3_client,
+        )
+
+        mock_paginator.paginate.assert_not_called()
+        mock_s3_client.delete_objects.assert_not_called()
 
 
 class TestProcessarArquivoETL(unittest.TestCase):
