@@ -4,81 +4,40 @@ import os
 import sys
 
 from app.glue_etl.src.utils import (
-    chamar_glue_data_quality,
-    eh_par,
-    processar_numero,
-    ler_arquivo_do_s3,
-    escrever_arquivo_no_s3,
-    processar_arquivo_etl,
+    obter_valor_argumento,
+    carregar_sor_json_para_tabela_sot,
 )
 
 
-def obter_valor_argumento(argv, arg_name):
-    """Le um argumento do Glue no formato --ARG_NAME valor."""
-    flag = f"--{arg_name}"
-    for index, arg in enumerate(argv):
-        if arg == flag and index + 1 < len(argv):
-            return argv[index + 1]
-    return None
-
-
-def obter_arg_data_quality_job_name(argv):
-    """Le o nome do job de Data Quality passado via argumentos do Glue."""
-    return obter_valor_argumento(argv, "GLUE_DATA_QUALITY_JOB_NAME")
-
-
-def processar_arquivo_sor_para_sot(s3_bucket_sor, s3_bucket_sot, s3_key_entrada, s3_key_saida):
-    """Lê arquivo do bucket SOR, processa e escreve no bucket SOT."""
-    # Lê arquivo do SOR
-    conteudo_entrada = ler_arquivo_do_s3(
-        bucket_name=s3_bucket_sor,
-        s3_key=s3_key_entrada
-    )
-    
-    # Processa o conteúdo
-    conteudo_processado = processar_arquivo_etl(conteudo_entrada)
-    
-    # Escreve no SOT
-    resultado = escrever_arquivo_no_s3(
-        bucket_name=s3_bucket_sot,
-        s3_key=s3_key_saida,
-        conteudo=conteudo_processado
-    )
-    
-    return resultado
-
-
 def main():
-    # Exemplo simples de execucao local do modulo.
-    resultado = processar_numero(10)
-    print(resultado)
-    
     # Configuracoes dos buckets S3 vindas dos argumentos do Glue.
     s3_bucket_sor = obter_valor_argumento(sys.argv, "S3_BUCKET_SOR") or os.getenv("S3_BUCKET_SOR")
     s3_bucket_sot = obter_valor_argumento(sys.argv, "S3_BUCKET_SOT") or os.getenv("S3_BUCKET_SOT")
+    catalog_database = obter_valor_argumento(sys.argv, "GLUE_CATALOG_DATABASE") or os.getenv("GLUE_CATALOG_DATABASE")
+    catalog_table = obter_valor_argumento(sys.argv, "GLUE_CATALOG_TABLE") or os.getenv("GLUE_CATALOG_TABLE")
+    sor_prefix = obter_valor_argumento(sys.argv, "SOR_PREFIX") or os.getenv("SOR_PREFIX") or "tmdb/discover_movie/"
+    sot_prefix = obter_valor_argumento(sys.argv, "SOT_PREFIX") or os.getenv("SOT_PREFIX") or "tmdb/movies_sot/"
 
-    if not s3_bucket_sor or not s3_bucket_sot:
-        raise ValueError("Buckets S3 do ETL nao informados. Defina --S3_BUCKET_SOR e --S3_BUCKET_SOT.")
+    if not s3_bucket_sor or not s3_bucket_sot or not catalog_database or not catalog_table:
+        raise ValueError(
+            "Argumentos obrigatorios ausentes. Defina --S3_BUCKET_SOR, --S3_BUCKET_SOT, "
+            "--GLUE_CATALOG_DATABASE e --GLUE_CATALOG_TABLE."
+        )
     
-    # Processa arquivo do SOR e escreve no SOT
+    # Processa JSON da SOR e escreve Parquet na SOT + tabela no Glue Catalog.
     try:
-        resultado_etl = processar_arquivo_sor_para_sot(
+        resultado_etl = carregar_sor_json_para_tabela_sot(
             s3_bucket_sor=s3_bucket_sor,
             s3_bucket_sot=s3_bucket_sot,
-            s3_key_entrada="teste.txt",
-            s3_key_saida="teste_processado.txt"
+            catalog_database=catalog_database,
+            catalog_table=catalog_table,
+            sor_prefix=sor_prefix,
+            sot_prefix=sot_prefix,
         )
-        print(f"ETL concluído com sucesso: {resultado_etl}")
+        print(f"ETL SOT concluido com sucesso: {resultado_etl}")
     except Exception as e:
         print(f"Erro ao processar arquivo ETL: {str(e)}")
         raise
-
-    # Etapa final: dispara o job de Data Quality apos o ETL.
-    data_quality_job_name = obter_arg_data_quality_job_name(sys.argv)
-    execucao_data_quality = chamar_glue_data_quality(
-        data_quality_job_name=data_quality_job_name,
-    )
-    print(execucao_data_quality)
 
 if __name__ == "__main__":
     main()

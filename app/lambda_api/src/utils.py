@@ -249,3 +249,42 @@ def carregar_filmes_tmdb_por_periodo_mensal(
         "objetos_salvos": objetos_salvos,
         "objetos_erro": objetos_erro,
     }
+
+
+def chamar_glue_etl(glue_etl_job_name, job_arguments=None, glue_client=None):
+    """Dispara o Glue ETL e retorna metadados da execucao."""
+    if not glue_etl_job_name:
+        raise ValueError("Nome do Glue ETL job nao informado.")
+
+    if glue_client is None:
+        glue_client = boto3.client("glue")
+
+    kwargs = {"JobName": glue_etl_job_name}
+    if job_arguments:
+        kwargs["Arguments"] = job_arguments
+
+    concurrent_exception = None
+    if hasattr(glue_client, "exceptions"):
+        concurrent_exception = getattr(
+            glue_client.exceptions,
+            "ConcurrentRunsExceededException",
+            None,
+        )
+
+    try:
+        response = glue_client.start_job_run(**kwargs)
+        glue_etl_job_run_id = response.get("JobRunId")
+        status = "started"
+    except Exception as exc:
+        if concurrent_exception and isinstance(exc, concurrent_exception):
+            glue_etl_job_run_id = None
+            status = "already_running"
+        else:
+            raise
+
+    return {
+        "glue_etl_job_name": glue_etl_job_name,
+        "glue_etl_job_run_id": glue_etl_job_run_id,
+        "glue_etl_job_status": status,
+    }
+

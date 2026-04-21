@@ -174,3 +174,32 @@ resource "aws_cloudwatch_log_group" "glue_data_quality_job_output_log_group" {
   name              = "/${var.glue_data_quality_job_name}/output"
   retention_in_days = 1
 }
+
+# Permissoes para criar/atualizar metadados da tabela SOT no Glue Catalog.
+resource "aws_iam_role_policy" "glue_manage_catalog_sot" {
+  name = "${var.iam_role_glue}-manage-catalog-sot"
+  role = aws_iam_role.glue_job_role.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "ManageCatalogSOT"
+        Effect = "Allow"
+        Action = [
+          "glue:GetDatabase",
+          "glue:CreateDatabase",
+          "glue:GetTable",
+          "glue:CreateTable",
+          "glue:UpdateTable",
+          "glue:GetPartition",
+          "glue:GetPartitions",
+          "glue:CreatePartition",
+          "glue:BatchCreatePartition",
+          "glue:UpdatePartition"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
