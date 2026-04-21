@@ -9,4 +9,6 @@ locals {
   glue_data_quality_src_path     = "${path.root}/../app/${var.glue_data_quality_path_app}"
   glue_data_quality_requirements_path = "${path.root}/../app/${var.glue_data_quality_path_app}/requirements.txt"
   glue_data_quality_build_path   = "${path.module}/.glue_data_quality_build"
+  glue_catalog_database_name     = var.glue_catalog_database_name != "" ? var.glue_catalog_database_name : "tmdb_${var.env}"
+  glue_catalog_table_movies_sot  = var.glue_catalog_table_movies_sot
 }

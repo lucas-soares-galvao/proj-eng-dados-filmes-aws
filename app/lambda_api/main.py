@@ -2,7 +2,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
-from src.utils import obter_tmdb_api_key, carregar_filmes_tmdb_por_periodo_mensal
+from src.utils import obter_tmdb_api_key, carregar_filmes_tmdb_por_periodo_mensal, chamar_glue_etl
 
 
 def lambda_handler(event, context):
@@ -10,6 +10,7 @@ def lambda_handler(event, context):
         secret_arn = os.getenv("TMDB_SECRET_ARN")
         bucket_name = os.getenv("S3_BUCKET_SOR")
         bucket_aux_name = os.getenv("S3_BUCKET_AUX")
+        glue_etl_job_name = os.getenv("GLUE_ETL_JOB_NAME")
 
         if not secret_arn:
             raise ValueError("Variavel de ambiente TMDB_SECRET_ARN nao configurada.")
@@ -20,6 +21,9 @@ def lambda_handler(event, context):
         if not bucket_aux_name:
             raise ValueError("Variavel de ambiente S3_BUCKET_AUX nao configurada.")
 
+        if not glue_etl_job_name:
+            raise ValueError("Variavel de ambiente GLUE_ETL_JOB_NAME nao configurada.")
+
         api_key = obter_tmdb_api_key(secret_arn)
         resumo = carregar_filmes_tmdb_por_periodo_mensal(
             api_key=api_key,
@@ -29,6 +33,9 @@ def lambda_handler(event, context):
             error_bucket_name=bucket_aux_name,
             error_prefix="lambda_api/error",
         )
+
+        execucao_glue_etl = chamar_glue_etl(glue_etl_job_name=glue_etl_job_name)
+        resumo["glue_etl"] = execucao_glue_etl
 
         return {
             "statusCode": 200,
