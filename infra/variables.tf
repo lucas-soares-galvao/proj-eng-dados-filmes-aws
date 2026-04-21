@@ -79,3 +79,27 @@ variable "glue_data_quality_job_name" {
   description = "Nome do Glue Data Quality job a ser criado por ambiente"
   type        = string
 }
+
+variable "glue_catalog_database_name" {
+  description = "Nome do database no Glue Catalog para a camada SOT"
+  type        = string
+  default     = ""
+}
+
+variable "glue_catalog_table_movies_sot" {
+  description = "Nome da tabela SOT de filmes no Glue Catalog"
+  type        = string
+  default     = "movies_sot"
+}
+
+variable "sor_tmdb_prefix" {
+  description = "Prefixo de entrada na SOR com os JSON da TMDB"
+  type        = string
+  default     = "tmdb/discover_movie/"
+}
+
+variable "sot_movies_prefix" {
+  description = "Prefixo de saida na SOT para arquivos Parquet"
+  type        = string
+  default     = "tmdb/movies_sot/"
+}

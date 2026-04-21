@@ -7,6 +7,7 @@ import requests
 
 from app.lambda_api.src.utils import (
     buscar_filme_por_periodo_de_lancamento,
+    chamar_glue_etl,
     carregar_filmes_tmdb_por_periodo_mensal,
     gerar_intervalos_mensais,
     obter_tmdb_api_key,
@@ -201,6 +202,59 @@ class TestSalvarJsonNoS3(unittest.TestCase):
         kwargs = mock_s3.put_object.call_args.kwargs
         self.assertEqual(kwargs["Bucket"], "bucket-sor")
         self.assertIn("year=2026/month=01", kwargs["Key"])
+
+
+class _FakeGlueClient:
+    def __init__(self):
+        self.calls = []
+
+    def start_job_run(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"JobRunId": "jr-123"}
+
+
+class _FakeGlueClientConcurrent:
+    class exceptions:
+        class ConcurrentRunsExceededException(Exception):
+            pass
+
+    def __init__(self):
+        self.calls = []
+
+    def start_job_run(self, **kwargs):
+        self.calls.append(kwargs)
+        raise self.exceptions.ConcurrentRunsExceededException()
+
+
+class TestChamarGlueEtl(unittest.TestCase):
+    def test_chamar_glue_etl_com_sucesso(self):
+        fake_client = _FakeGlueClient()
+
+        result = chamar_glue_etl(
+            glue_etl_job_name="glue-etl-dev",
+            job_arguments={"--env": "dev"},
+            glue_client=fake_client,
+        )
+
+        self.assertEqual(fake_client.calls[0]["JobName"], "glue-etl-dev")
+        self.assertEqual(fake_client.calls[0]["Arguments"], {"--env": "dev"})
+        self.assertEqual(result["glue_etl_job_status"], "started")
+        self.assertEqual(result["glue_etl_job_run_id"], "jr-123")
+
+    def test_chamar_glue_etl_falha_sem_nome_job(self):
+        with self.assertRaises(ValueError):
+            chamar_glue_etl(glue_etl_job_name=None)
+
+    def test_chamar_glue_etl_retorna_already_running_quando_excede_concorrencia(self):
+        fake_client = _FakeGlueClientConcurrent()
+
+        result = chamar_glue_etl(
+            glue_etl_job_name="glue-etl-dev",
+            glue_client=fake_client,
+        )
+
+        self.assertEqual(result["glue_etl_job_status"], "already_running")
+        self.assertIsNone(result["glue_etl_job_run_id"])
 
 
 class TestCarregarFilmesTmdbPorPeriodoMensal(unittest.TestCase):

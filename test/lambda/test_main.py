@@ -8,8 +8,9 @@ from app.lambda_api.main import lambda_handler
 
 class TestMain(unittest.TestCase):
     @patch("app.lambda_api.main.carregar_filmes_tmdb_por_periodo_mensal")
+    @patch("app.lambda_api.main.chamar_glue_etl")
     @patch("app.lambda_api.main.obter_tmdb_api_key")
-    def test_lambda_handler_sucesso(self, mock_obter_tmdb_api_key, mock_carregar):
+    def test_lambda_handler_sucesso(self, mock_obter_tmdb_api_key, mock_chamar_glue_etl, mock_carregar):
         mock_obter_tmdb_api_key.return_value = "abc123"
         mock_carregar.return_value = {
             "total_meses_processados": 2,
@@ -19,6 +20,11 @@ class TestMain(unittest.TestCase):
                 "tmdb/discover_movie/year=2000/month=02/movies_2000_02.json",
             ],
         }
+        mock_chamar_glue_etl.return_value = {
+            "glue_etl_job_name": "glue-etl-dev",
+            "glue_etl_job_run_id": "jr-123",
+            "glue_etl_job_status": "started",
+        }
 
         with patch.dict(
             "os.environ",
@@ -26,6 +32,7 @@ class TestMain(unittest.TestCase):
                 "TMDB_SECRET_ARN": "arn:aws:secretsmanager:tmdb",
                 "S3_BUCKET_SOR": "bucket-sor",
                 "S3_BUCKET_AUX": "bucket-aux",
+                "GLUE_ETL_JOB_NAME": "glue-etl-dev",
             },
             clear=True,
         ):
@@ -42,6 +49,8 @@ class TestMain(unittest.TestCase):
             error_bucket_name="bucket-aux",
             error_prefix="lambda_api/error",
         )
+        mock_chamar_glue_etl.assert_called_once_with(glue_etl_job_name="glue-etl-dev")
+        self.assertEqual(response["body"]["glue_etl"]["glue_etl_job_status"], "started")
 
     def test_lambda_handler_falha_sem_secret_arn(self):
         with patch.dict("os.environ", {"S3_BUCKET_SOR": "bucket-sor"}, clear=True):
@@ -72,9 +81,25 @@ class TestMain(unittest.TestCase):
         self.assertEqual(response["statusCode"], 500)
         self.assertIn("S3_BUCKET_AUX", response["body"])
 
+    def test_lambda_handler_falha_sem_glue_etl_job_name(self):
+        with patch.dict(
+            "os.environ",
+            {
+                "TMDB_SECRET_ARN": "arn:aws:secretsmanager:tmdb",
+                "S3_BUCKET_SOR": "bucket-sor",
+                "S3_BUCKET_AUX": "bucket-aux",
+            },
+            clear=True,
+        ):
+            response = lambda_handler(event={}, context=None)
+
+        self.assertEqual(response["statusCode"], 500)
+        self.assertIn("GLUE_ETL_JOB_NAME", response["body"])
+
     @patch("app.lambda_api.main.carregar_filmes_tmdb_por_periodo_mensal")
+    @patch("app.lambda_api.main.chamar_glue_etl")
     @patch("app.lambda_api.main.obter_tmdb_api_key")
-    def test_lambda_handler_retorna_erro_interno(self, mock_obter_tmdb_api_key, mock_carregar):
+    def test_lambda_handler_retorna_erro_interno(self, mock_obter_tmdb_api_key, _mock_chamar_glue_etl, mock_carregar):
         mock_obter_tmdb_api_key.return_value = "abc123"
         mock_carregar.side_effect = RuntimeError("falha ao processar")
 
@@ -84,6 +109,7 @@ class TestMain(unittest.TestCase):
                 "TMDB_SECRET_ARN": "arn:aws:secretsmanager:tmdb",
                 "S3_BUCKET_SOR": "bucket-sor",
                 "S3_BUCKET_AUX": "bucket-aux",
+                "GLUE_ETL_JOB_NAME": "glue-etl-dev",
             },
             clear=True,
         ):
