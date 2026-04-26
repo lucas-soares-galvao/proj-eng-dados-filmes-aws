@@ -39,6 +39,7 @@ class TestGlueEtlMain(unittest.TestCase):
         "GLUE_CATALOG_TABLE": "movies_sot",
         "S3_BUCKET_SOR": "bucket-sor",
         "S3_BUCKET_SOT": "bucket-sot",
+        "GLUE_DATA_QUALITY_JOB_NAME": "glue-data-quality-dev",
     }
 
     def tearDown(self):
