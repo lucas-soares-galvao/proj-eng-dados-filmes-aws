@@ -31,7 +31,7 @@ resource "aws_s3_object" "lambda_deploy_package" {
 
 resource "aws_lambda_function" "simple_lambda" {
 	function_name = "${var.lambda_api_name}"
-	role          = aws_iam_role.lambda_role.arn
+	role          = aws_iam_role.lambda_function.arn
 	handler       = "main.lambda_handler"
 	runtime       = "python3.11"
 	timeout       = 900
@@ -39,10 +39,10 @@ resource "aws_lambda_function" "simple_lambda" {
 
 	environment {
 		variables = {
-			TMDB_SECRET_ARN 		   = var.tmdb_secret_arn
+			TMDB_SECRET_ARN            = var.tmdb_secret_arn
 			GLUE_ETL_JOB_NAME          = var.glue_etl_job_name
 			S3_BUCKET_SOR              = var.s3_bucket_sor
-			S3_BUCKET_AUX			   = var.s3_bucket_aux
+			S3_BUCKET_AUX              = var.s3_bucket_aux
 		}
 	}
 
