@@ -36,8 +36,7 @@ resource "aws_glue_job" "etl_job" {
     "--S3_BUCKET_SOT"                    = var.s3_bucket_sot
     "--GLUE_CATALOG_DATABASE"            = local.glue_catalog_database_name
     "--GLUE_CATALOG_TABLE"               = local.glue_catalog_table_movies_sot
-    "--SOR_PREFIX"                       = var.sor_tmdb_prefix
-    "--SOT_PREFIX"                       = var.sot_movies_prefix
+    "--GLUE_DATA_QUALITY_JOB_NAME"       = var.glue_data_quality_job_name
   }
 
   # Garanta que artefatos e permissoes existam antes da criacao do job.
@@ -51,6 +50,7 @@ resource "aws_glue_job" "etl_job" {
     aws_iam_role_policy.glue_manage_catalog_sot,
     aws_glue_catalog_database.sot_database,
     aws_glue_catalog_table.movies_sot,
+    aws_glue_job.glue_data_quality_job,
     aws_cloudwatch_log_group.glue_etl_job_error_log_group,
     aws_cloudwatch_log_group.glue_etl_job_output_log_group
   ]
