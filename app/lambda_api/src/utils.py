@@ -48,28 +48,33 @@ def gerar_periodos_mensais(ano_inicio):
 
 def buscar_filmes_por_periodo(api_key, periodo, max_paginas=5):
     url = "https://api.themoviedb.org/3/discover/movie"
-
+    idiomas = ["pt-BR", "en-US"]
     filmes = []
 
-    for pagina in range(1, max_paginas + 1):
-        params = {
-            "api_key": api_key,
-            "primary_release_date.gte": periodo["data_inicio"],
-            "primary_release_date.lte": periodo["data_fim"],
-            "sort_by": "popularity.desc",
-            "page": pagina
-        }
+    for idioma in idiomas:
+        filmes = []
+        for pagina in range(1, max_paginas + 1):
+            params = {
+                "api_key": api_key,
+                "primary_release_date.gte": periodo["data_inicio"],
+                "primary_release_date.lte": periodo["data_fim"],
+                "sort_by": "popularity.desc",
+                "page": pagina,
+                "language": idioma
+            }
 
-        response = requests.get(url, params=params)
-        response.raise_for_status()
+            response = requests.get(url, params=params)
+            response.raise_for_status()
 
-        dados = response.json()
+            dados = response.json()
+            filmes.extend(dados["results"])
 
-        filmes.extend(dados["results"])
+            # Se não tiver mais páginas, para antes
+            if pagina >= dados.get("total_pages", 1):
+                break
 
-        # Se não tiver mais páginas, para antes
-        if pagina >= dados.get("total_pages", 1):
-            break
+        if filmes:
+            break  # Se encontrou filmes em algum idioma, não tenta o próximo
 
     return filmes
 

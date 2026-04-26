@@ -27,14 +27,23 @@ class TestUtils(unittest.TestCase):
 
     @patch("requests.get")
     def test_buscar_filmes_por_periodo(self, mock_get):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
+        # Simula resposta vazia para pt-BR e resposta com filmes para en-US
+        mock_response_pt = MagicMock()
+        mock_response_pt.json.return_value = {
+            "results": [],
+            "total_pages": 1
+        }
+        mock_response_pt.raise_for_status.return_value = None
+
+        mock_response_en = MagicMock()
+        mock_response_en.json.return_value = {
             "results": [{"id": 1}, {"id": 2}],
             "total_pages": 1
         }
-        mock_response.raise_for_status.return_value = None
+        mock_response_en.raise_for_status.return_value = None
 
-        mock_get.return_value = mock_response
+        # O mock retorna pt-BR na primeira chamada, en-US na segunda
+        mock_get.side_effect = [mock_response_pt, mock_response_en]
 
         periodo = {
             "data_inicio": "2024-01-01",
@@ -44,6 +53,8 @@ class TestUtils(unittest.TestCase):
         filmes = utils.buscar_filmes_por_periodo("fake_key", periodo)
 
         self.assertEqual(len(filmes), 2)
+        self.assertEqual(filmes[0]["id"], 1)
+        self.assertEqual(filmes[1]["id"], 2)
 
     @patch("boto3.client")
     def test_salvar_json_no_s3(self, mock_boto):
