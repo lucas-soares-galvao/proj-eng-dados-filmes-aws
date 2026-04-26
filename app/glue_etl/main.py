@@ -7,7 +7,8 @@ args = getResolvedOptions(sys.argv, [
     "GLUE_CATALOG_DATABASE",
     "GLUE_CATALOG_TABLE",
     "S3_BUCKET_SOR",
-    "S3_BUCKET_SOT"
+    "S3_BUCKET_SOT",
+    "GLUE_DATA_QUALITY_JOB_NAME"
 ])
 
 database = args["GLUE_CATALOG_DATABASE"]
