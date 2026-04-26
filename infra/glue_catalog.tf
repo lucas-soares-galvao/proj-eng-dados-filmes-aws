@@ -16,7 +16,7 @@ resource "aws_glue_catalog_table" "movies_sot" {
   }
 
   storage_descriptor {
-    location      = "s3://${var.s3_bucket_sot}/${var.sot_movies_prefix}"
+    location      = "s3://${var.s3_bucket_sot}/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
