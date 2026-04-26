@@ -50,7 +50,7 @@ resource "aws_glue_job" "etl_job" {
     aws_iam_role_policy.glue_manage_catalog_sot,
     aws_glue_catalog_database.sot_database,
     aws_glue_catalog_table.movies_sot,
-    aws_glue_job.glue_data_quality_job,
+    aws_glue_job.data_quality_job,
     aws_cloudwatch_log_group.glue_etl_job_error_log_group,
     aws_cloudwatch_log_group.glue_etl_job_output_log_group
   ]
