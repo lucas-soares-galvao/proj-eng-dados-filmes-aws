@@ -125,7 +125,6 @@ resource "aws_lambda_function" "simple_lambda" {
 		variables = {
 			TMDB_SECRET_ARN 		   = var.tmdb_secret_arn
 			GLUE_ETL_JOB_NAME          = var.glue_etl_job_name
-			GLUE_DATA_QUALITY_JOB_NAME = var.glue_data_quality_job_name
 			S3_BUCKET_SOR              = var.s3_bucket_sor
 			S3_BUCKET_AUX			   = var.s3_bucket_aux
 		}

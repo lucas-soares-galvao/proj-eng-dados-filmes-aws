@@ -91,15 +91,3 @@ variable "glue_catalog_table_movies_sot" {
   type        = string
   default     = "movies_sot"
 }
-
-variable "sor_tmdb_prefix" {
-  description = "Prefixo de entrada na SOR com os JSON da TMDB"
-  type        = string
-  default     = "tmdb/discover_movie/"
-}
-
-variable "sot_movies_prefix" {
-  description = "Prefixo de saida na SOT para arquivos Parquet"
-  type        = string
-  default     = "tmdb/movies_sot/"
-}
