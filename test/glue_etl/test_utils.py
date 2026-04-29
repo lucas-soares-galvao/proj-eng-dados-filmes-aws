@@ -64,7 +64,7 @@ class TestProcessTmdb(unittest.TestCase):
         df["custom"] = ["A", "B", "C"]  # Simulate custom column
         mock_wr.s3.read_json.return_value = df
 
-        result = process_tmdb(
+        process_tmdb(
             source_path="s3://bucket-sor/",
             destination_path="s3://bucket-sot/",
             database="tmdb_dev",
