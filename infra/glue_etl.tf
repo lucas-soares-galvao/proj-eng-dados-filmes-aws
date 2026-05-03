@@ -44,7 +44,7 @@ resource "aws_glue_job" "etl_job" {
     aws_iam_role_policy_attachment.glue_etl_service_role,
     aws_iam_role_policy_attachment.glue_etl_read_code,
     aws_iam_role_policy.glue_etl_logs,
-    aws_iam_role_policy.glue_read_sor_write_sot,
+    aws_iam_role_policy.glue_etl_sor_sot,
     aws_iam_role_policy.glue_manage_catalog_tmdb,
     aws_glue_job.data_quality_job,
     aws_cloudwatch_log_group.glue_etl_error,
