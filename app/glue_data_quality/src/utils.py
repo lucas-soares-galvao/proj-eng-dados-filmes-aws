@@ -34,7 +34,7 @@ def read_catalog_table(glue_context, database, table):
     )
 
 
-def run_data_quality(datasource, ruleset, database, table, partition_columns):
+def run_data_quality(datasource, ruleset):
     return EvaluateDataQuality.apply(
         frame=datasource,
         ruleset=ruleset,
@@ -43,9 +43,6 @@ def run_data_quality(datasource, ruleset, database, table, partition_columns):
             "enableDataQualityCloudWatchMetrics": True,
             "enableDataQualityResultsPublishing": True,
         },
-        database=database,
-        table=table,
-        partition_columns=partition_columns,
     )
 
 
