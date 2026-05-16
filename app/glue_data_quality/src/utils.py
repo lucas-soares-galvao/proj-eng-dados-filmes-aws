@@ -3,7 +3,7 @@ from awsglue.utils import getResolvedOptions
 from awsgluedq.transforms import EvaluateDataQuality
 from pyspark.sql.functions import lit
 
-from src.rulesets_dq import rulesets_dq
+from .rulesets_dq import rulesets_dq
 
 
 def parse_args(argv):
