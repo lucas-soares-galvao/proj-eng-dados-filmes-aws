@@ -3,15 +3,26 @@ import sys
 from awsglue.context import GlueContext
 from pyspark.context import SparkContext
 
-from src.utils import (
-    build_ruleset,
-    get_partition_columns,
-    parse_args,
-    read_catalog_table,
-    register_partition,
-    run_data_quality,
-    write_results,
-)
+try:
+    from app.glue_data_quality.src.utils import (
+        build_ruleset,
+        get_partition_columns,
+        parse_args,
+        read_catalog_table,
+        register_partition,
+        run_data_quality,
+        write_results,
+    )
+except ImportError:  # pragma: no cover - fallback for Glue runtime script path
+    from src.utils import (
+        build_ruleset,
+        get_partition_columns,
+        parse_args,
+        read_catalog_table,
+        register_partition,
+        run_data_quality,
+        write_results,
+    )
 
 
 def main(argv=None):
