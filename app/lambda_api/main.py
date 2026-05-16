@@ -1,15 +1,26 @@
 
 import os
 from datetime import date
-from src.utils import (
-    get_tmdb_key,
-    extract_media_tables,
-    generate_monthly_periods,
-    process_discover,
-    process_genres,
-    process_configuration,
-    trigger_glue_etl
-)
+try:
+    from app.lambda_api.src.utils import (
+        extract_media_tables,
+        generate_monthly_periods,
+        get_tmdb_key,
+        process_configuration,
+        process_discover,
+        process_genres,
+        trigger_glue_etl,
+    )
+except ImportError:  # pragma: no cover - fallback for Lambda package layout
+    from src.utils import (
+        extract_media_tables,
+        generate_monthly_periods,
+        get_tmdb_key,
+        process_configuration,
+        process_discover,
+        process_genres,
+        trigger_glue_etl,
+    )
 
 
 def lambda_handler(event, context):
@@ -17,11 +28,20 @@ def lambda_handler(event, context):
     glue_job_name = os.getenv("GLUE_ETL_JOB_NAME")
     bucket = os.getenv("S3_BUCKET_SOR")
 
-    api_key = get_tmdb_key(secret_arn)
-    last_year = date.today().year - 1
-    periods = generate_monthly_periods(start_year=last_year)
+    try:
+        media_info = extract_media_tables(event)
+    except ValueError as error:
+        return {
+            "statusCode": 400,
+            "body": {
+                "error": str(error)
+            }
+        }
 
-    media_info = extract_media_tables(event)
+    api_key = get_tmdb_key(secret_arn)
+    current_year = date.today().year
+    periods = generate_monthly_periods(start_year=current_year)
+
     media_type = media_info["media_type"]
     configuration_type = media_info["configuration"]
 
