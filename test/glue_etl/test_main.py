@@ -1,105 +1,150 @@
-"""Testes do modulo principal da aplicacao."""
+"""Raciocinio: valida orquestracao do ETL (escopo, argumentos e disparo de Data Quality)."""
 
-import os
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from app.glue_etl.main import (
-    main,
-    obter_arg_data_quality_job_name,
-    processar_numero,
-    processar_arquivo_sor_para_sot,
-)
+from app.glue_etl import main
 
-class TestMain(unittest.TestCase):
-    """Valida as mensagens retornadas pela funcao processar_numero."""
 
-    def test_processar_numero_par(self):
-        # Testa a lógica para um número par
-        esperado = "O número 10 é par."
-        resultado = processar_numero(10)
-        self.assertEqual(resultado, esperado)
+DEFAULT_ARGS = {
+    "GLUE_CATALOG_DATABASE": "db_tmdb",
+    "GLUE_CATALOG_TABLE": "movie_sot",
+    "S3_BUCKET_SOR": "bucket-sor",
+    "S3_BUCKET_SOT": "bucket-sot",
+    "GLUE_DATA_QUALITY_JOB_NAME": "glue-data-quality-dev",
+    "MEDIA_TYPE": "movie",
+    "DATABASE": "db_tmdb",
+    "DISCOVER_TABLE": "tb_discover_movie_tmdb",
+    "GENRE_TABLE": "tb_genre_movie_tmdb",
+    "CONFIGURATION_TABLE": "tb_configuration_movie_tmdb",
+    "CONFIGURATION": "languages",
+    "PARTITION_COLUMNS": "year,month",
+    "YEAR": "2023"
+}
 
-    def test_processar_numero_impar(self):
-        # Testa a lógica para um número ímpar
-        esperado = "O número 7 é ímpar."
-        resultado = processar_numero(7)
-        self.assertEqual(resultado, esperado)
+STATIC_ARGS = {
+    **DEFAULT_ARGS,
+    "TABLE_SCOPE": "static"
+}
 
-    @patch("app.glue_etl.main.print")
-    @patch(
-        "app.glue_etl.main.sys.argv",
-        [
-            "main.py",
-            "--GLUE_DATA_QUALITY_JOB_NAME",
-            "dq-job",
-            "--S3_BUCKET_SOR",
-            "lsg-sa-east-1-bucket-sor-dev",
-            "--S3_BUCKET_SOT",
-            "lsg-sa-east-1-bucket-sot-dev",
-        ],
-    )
-    @patch("app.glue_etl.main.processar_arquivo_sor_para_sot")
-    @patch("app.glue_etl.main.chamar_glue_data_quality")
-    def test_main_dispara_data_quality_na_ultima_etapa(self, mock_chamar_dq, mock_processar_arquivo, mock_print):
-        mock_processar_arquivo.return_value = {
-            "bucket": "sot-bucket",
-            "key": "teste_processado.txt",
-            "status": "written"
-        }
-        mock_chamar_dq.return_value = {
-            "data_quality_job_name": "dq-job",
-            "data_quality_job_run_id": "jr-abc",
-        }
+DISCOVER_ARGS = {
+    **DEFAULT_ARGS,
+    "TABLE_SCOPE": "discover"
+}
 
-        main()
 
-        mock_processar_arquivo.assert_called_once()
-        mock_chamar_dq.assert_called_once_with(data_quality_job_name="dq-job")
-        self.assertEqual(mock_print.call_count, 3)  # Número, resultado ETL, resultado DQ
+class TestGlueEtlMain(unittest.TestCase):
+    def test_calls_glue_data_quality_with_partitions(self):
+        with patch("app.glue_etl.main.resolve_args", return_value=DEFAULT_ARGS), \
+            patch("app.glue_etl.main.process_tmdb") as mock_process_tmdb, \
+            patch("app.glue_etl.main.call_glue_data_quality") as mock_call_glue_data_quality:
+            mock_process_tmdb.side_effect = [
+                {"partitions": ["year=2023/month=01", "year=2023/month=02"]},
+                {"partitions": []},
+                {"partitions": []}
+            ]
+            mock_call_glue_data_quality.return_value = {"job_name": "glue-data-quality-dev", "job_run_id": "123"}
 
-    def test_obter_arg_data_quality_job_name_quando_presente(self):
-        argv = ["main.py", "--GLUE_DATA_QUALITY_JOB_NAME", "dq-job"]
-        self.assertEqual(obter_arg_data_quality_job_name(argv), "dq-job")
+            main.main([])
 
-    def test_obter_arg_data_quality_job_name_quando_ausente(self):
-        argv = ["main.py", "--outra-flag", "valor"]
-        self.assertIsNone(obter_arg_data_quality_job_name(argv))
+            expected_calls = [
+                (
+                    "glue-data-quality-dev",
+                    {
+                        "database": "db_tmdb",
+                        "table": "tb_discover_movie_tmdb",
+                        "partition_values": ["year=2023"]
+                    }
+                ),
+                (
+                    "glue-data-quality-dev",
+                    {
+                        "database": "db_tmdb",
+                        "table": "tb_genre_movie_tmdb",
+                        "partition_values": None
+                    }
+                ),
+                (
+                    "glue-data-quality-dev",
+                    {
+                        "database": "db_tmdb",
+                        "table": "tb_configuration_movie_tmdb",
+                        "partition_values": None
+                    }
+                )
+            ]
+            actual_calls = [(c.args[0], c.kwargs) for c in mock_call_glue_data_quality.call_args_list]
+            self.assertEqual(len(actual_calls), len(expected_calls))
+            for (actual_job, actual_kwargs), (expected_job, expected_kwargs) in zip(actual_calls, expected_calls):
+                self.assertEqual(actual_job, expected_job)
+                self.assertDictEqual(actual_kwargs, expected_kwargs)
 
-    @patch("app.glue_etl.main.escrever_arquivo_no_s3")
-    @patch("app.glue_etl.main.ler_arquivo_do_s3")
-    def test_processar_arquivo_sor_para_sot_com_sucesso(self, mock_ler, mock_escrever):
-        """Testa o processamento bem-sucedido do arquivo SOR para SOT."""
-        mock_ler.return_value = "conteudo original"
-        mock_escrever.return_value = {
-            "bucket": "sot-bucket",
-            "key": "teste_processado.txt",
-            "status": "written"
-        }
+    def test_calls_process_tmdb_with_correct_arguments(self):
+        with patch("app.glue_etl.main.resolve_args", return_value=DEFAULT_ARGS), \
+            patch("app.glue_etl.main.process_tmdb") as mock_process_tmdb, \
+            patch("app.glue_etl.main.call_glue_data_quality"):
+            mock_process_tmdb.return_value = {"partitions": []}
 
-        resultado = processar_arquivo_sor_para_sot(
-            s3_bucket_sor="sor-bucket",
-            s3_bucket_sot="sot-bucket",
-            s3_key_entrada="teste.txt",
-            s3_key_saida="teste_processado.txt"
-        )
+            main.main([])
 
-        # Verifica se leu do SOR
-        mock_ler.assert_called_once_with(
-            bucket_name="sor-bucket",
-            s3_key="teste.txt"
-        )
+            expected_calls = [
+                dict(source_path="s3://bucket-sor/tmdb/discover/movie/", destination_path="s3://bucket-sot/tmdb/tb_discover_movie_tmdb/", database="db_tmdb", table="tb_discover_movie_tmdb", partition_columns=["year", "month"], date_column="release_date"),
+                dict(source_path="s3://bucket-sor/tmdb/genre/movie/", destination_path="s3://bucket-sot/tmdb/tb_genre_movie_tmdb/", database="db_tmdb", table="tb_genre_movie_tmdb", partition_columns=[], date_column=None),
+                dict(source_path="s3://bucket-sor/tmdb/configuration/languages/", destination_path="s3://bucket-sot/tmdb/tb_configuration_movie_tmdb/", database="db_tmdb", table="tb_configuration_movie_tmdb", partition_columns=[], date_column=None),
+            ]
+            actual_calls = [call.kwargs for call in mock_process_tmdb.call_args_list]
+            self.assertEqual(actual_calls, expected_calls)
 
-        # Verifica se escreveu no SOT
-        mock_escrever.assert_called_once()
-        call_kwargs = mock_escrever.call_args[1]
-        self.assertEqual(call_kwargs["bucket_name"], "sot-bucket")
-        self.assertEqual(call_kwargs["s3_key"], "teste_processado.txt")
-        self.assertIn("[PROCESSADO PELO ETL]", call_kwargs["conteudo"])
+    def test_discovers_scope_processes_only_requested_year(self):
+        with patch("app.glue_etl.main.resolve_args", return_value=DISCOVER_ARGS), \
+            patch("app.glue_etl.main.process_tmdb") as mock_process_tmdb, \
+            patch("app.glue_etl.main.call_glue_data_quality") as mock_call_glue_data_quality:
+            mock_process_tmdb.return_value = {"partitions": ["year=2023/month=01"]}
 
-        # Verifica resultado
-        self.assertEqual(resultado["status"], "written")
+            main.main([])
 
-if __name__ == '__main__':
+            mock_process_tmdb.assert_called_once_with(
+                source_path="s3://bucket-sor/tmdb/discover/movie/year=2023/",
+                destination_path="s3://bucket-sot/tmdb/tb_discover_movie_tmdb/",
+                database="db_tmdb",
+                table="tb_discover_movie_tmdb",
+                partition_columns=["year", "month"],
+                date_column="release_date"
+            )
+            mock_call_glue_data_quality.assert_called_once_with(
+                "glue-data-quality-dev",
+                database="db_tmdb",
+                table="tb_discover_movie_tmdb",
+                partition_values=["year=2023"]
+            )
+
+    def test_static_scope_skips_discover(self):
+        with patch("app.glue_etl.main.resolve_args", return_value=STATIC_ARGS), \
+            patch("app.glue_etl.main.process_tmdb") as mock_process_tmdb, \
+            patch("app.glue_etl.main.call_glue_data_quality") as mock_call_glue_data_quality:
+            mock_process_tmdb.return_value = {"partitions": []}
+
+            main.main([])
+
+            expected_calls = [
+                dict(source_path="s3://bucket-sor/tmdb/genre/movie/", destination_path="s3://bucket-sot/tmdb/tb_genre_movie_tmdb/", database="db_tmdb", table="tb_genre_movie_tmdb", partition_columns=[], date_column=None),
+                dict(source_path="s3://bucket-sor/tmdb/configuration/languages/", destination_path="s3://bucket-sot/tmdb/tb_configuration_movie_tmdb/", database="db_tmdb", table="tb_configuration_movie_tmdb", partition_columns=[], date_column=None),
+            ]
+            actual_calls = [call.kwargs for call in mock_process_tmdb.call_args_list]
+            self.assertEqual(actual_calls, expected_calls)
+            self.assertEqual(mock_call_glue_data_quality.call_count, 2)
+
+    def test_main_runs_without_exception(self):
+        with patch("app.glue_etl.main.resolve_args", return_value=DEFAULT_ARGS), \
+            patch("app.glue_etl.main.process_tmdb") as mock_process_tmdb, \
+            patch("app.glue_etl.main.call_glue_data_quality"):
+            mock_process_tmdb.return_value = {"partitions": []}
+
+            try:
+                main.main([])
+            except Exception as exc:
+                self.fail(f"main.py raised an unexpected exception: {exc}")
+
+
+if __name__ == "__main__":
     unittest.main()
-    

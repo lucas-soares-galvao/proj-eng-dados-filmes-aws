@@ -1,1 +1,2 @@
-"""Pacote principal da aplicacao de exemplo usada pelo Glue."""
+"""Raciocinio: marca o pacote da Lambda API para manter estrutura de imports estavel."""
+

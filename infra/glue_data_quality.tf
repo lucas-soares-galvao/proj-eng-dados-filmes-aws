@@ -1,8 +1,9 @@
-# Define o Glue Job responsavel por executar o pipeline de ETL.
+# Raciocinio: define o job Glue Data Quality com argumentos e dependencias de execucao.
+
 resource "aws_glue_job" "data_quality_job" {
-  name              = var.glue_data_quality_job_name
-  description       = "Glue Data Quality job"
-  role_arn          = aws_iam_role.glue_job_role.arn
+  name              = local.envs.glue_data_quality_job_name
+  description       = "Glue Data Quality Job"
+  role_arn          = aws_iam_role.glue_dq_role.arn
   glue_version      = "5.0"
   max_retries       = 0
   timeout           = 30
@@ -11,8 +12,8 @@ resource "aws_glue_job" "data_quality_job" {
   execution_class   = "STANDARD"
 
   command {
-    # Script principal do job no bucket auxiliar.
-    script_location = "s3://${var.s3_bucket_aux}/${var.glue_data_quality_job_name}/app/main.py"
+    # Script principal do job armazenado no bucket auxiliar.
+    script_location = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_data_quality_job_name}/app/main.py"
     name            = "glueetl"
     python_version  = "3"
   }
@@ -23,61 +24,55 @@ resource "aws_glue_job" "data_quality_job" {
 
   default_arguments = {
     "--job-language"                     = "python"
-    # Bundle com modulos auxiliares importados pelo script principal.
-    "--extra-py-files"                   = "s3://${var.s3_bucket_aux}/${var.glue_data_quality_job_name}/app_bundle.zip"
-    # Prefixo customizado para os grupos /<job>/error e /<job>/output.
-    "--custom-logGroup-prefix"           = "/${var.glue_data_quality_job_name}"
+    "--extra-py-files"                   = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_data_quality_job_name}/app_bundle.zip"
+    "--additional-python-modules"        = local.glue_data_quality_additional_python_modules
+    "--custom-logGroup-prefix"           = "/${local.envs.glue_data_quality_job_name}"
     "--enable-metrics"                   = ""
-    "--enable-auto-scaling"              = "true"
+    "--S3_BUCKET_DATA_QUALITY"           = local.envs.s3_bucket_data_quality
+    "--ENVIRONMENT"                      = var.env
   }
 
-  # Garante que artefatos e permissoes existam antes da criacao do job.
+
+  # Garante que artefatos e permissoes existam antes de criar o job.
   depends_on = [
     aws_s3_object.deploy_scripts_bucket_data_quality,
     aws_s3_object.deploy_app_bundle_data_quality,
-    aws_iam_role_policy_attachment.glue_service_role,
-    aws_iam_role_policy.glue_read_code_from_s3,
-    aws_iam_role_policy.glue_write_logs_custom_prefix,
-    aws_cloudwatch_log_group.glue_data_quality_job_error_log_group,
-    aws_cloudwatch_log_group.glue_data_quality_job_output_log_group
+    aws_iam_role_policy_attachment.glue_dq_service_role,
+    aws_iam_role_policy_attachment.glue_dq_read_code,
+    aws_iam_role_policy.glue_dq_logs,
+    aws_cloudwatch_log_group.glue_data_quality_error,
+    aws_cloudwatch_log_group.glue_data_quality_output
   ]
 
   execution_property {
-    max_concurrent_runs = 2
+    max_concurrent_runs = 15
   }
 }
 
+
 # Publica o script principal executado pelo Glue no bucket auxiliar.
 resource "aws_s3_object" "deploy_scripts_bucket_data_quality" {
-  bucket = var.s3_bucket_aux
-  key    = "${var.glue_data_quality_job_name}/app/main.py"
+  bucket = aws_s3_bucket.auxiliary_bucket.id
+  key    = "${local.envs.glue_data_quality_job_name}/app/main.py"
   source = "${local.glue_data_quality_src_path}/main.py"
   etag   = filemd5("${local.glue_data_quality_src_path}/main.py")
+  depends_on = [aws_s3_bucket.auxiliary_bucket]
 }
+
 
 # Empacota todos os modulos Python da aplicacao em um unico zip reutilizavel.
 data "archive_file" "glue_app_bundle_data_quality" {
   type        = "zip"
   output_path = "${path.module}/glue_app_bundle_data_quality.zip"
-
-  source {
-    filename = "app/__init__.py"
-    content  = file("${path.root}/../app/__init__.py")
-  }
-
-  dynamic "source" {
-    for_each = fileset(local.glue_data_quality_src_path, "**/*.py")
-    content {
-      filename = "app/${var.glue_data_quality_path_app}/${source.value}"
-      content  = file("${local.glue_data_quality_src_path}/${source.value}")
-    }
-  }
+  source_dir  = local.glue_data_quality_src_path
 }
 
-# Envia o bundle zipado para o S3, usado em --extra-py-files no Glue Job.
+
+# Envia o pacote zipado para o S3, usado em --extra-py-files no job Glue.
 resource "aws_s3_object" "deploy_app_bundle_data_quality" {
-  bucket = var.s3_bucket_aux
-  key    = "${var.glue_data_quality_job_name}/app_bundle.zip"
+  bucket = aws_s3_bucket.auxiliary_bucket.id
+  key    = "${local.envs.glue_data_quality_job_name}/app_bundle.zip"
   source = data.archive_file.glue_app_bundle_data_quality.output_path
-  etag   = filemd5(data.archive_file.glue_app_bundle_data_quality.output_path)
+  etag   = data.archive_file.glue_app_bundle_data_quality.output_md5
+  depends_on = [aws_s3_bucket.auxiliary_bucket]
 }
