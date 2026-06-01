@@ -64,9 +64,9 @@ jobs:
       contents: write
       pull-requests: write
 
-  # 6. Auto PR para Ambientes: Promove develop -> main
+  # 6. Auto PR para Ambientes: promove develop -> main apos deploy Terraform bem-sucedido
   auto-pr-environment:
-    needs: [terraform] # Só inicia se o terraform indicou que a infraestrutura foi destruída (caso de teste de destroy)
+    needs: [terraform] # So inicia quando o workflow de Terraform conclui com sucesso
     # Só roda para develop (main não tem destino posterior para promover)
     if: |
       github.ref_name == 'develop' &&
