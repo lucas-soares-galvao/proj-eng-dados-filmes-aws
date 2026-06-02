@@ -8,6 +8,7 @@
 resource "aws_s3_bucket" "auxiliary_bucket" {
   bucket        = local.envs.s3_bucket_aux
   force_destroy = true
+  tags          = local.component_tags.shared
 }
 
 resource "aws_s3_bucket_public_access_block" "auxiliary_bucket" {
@@ -35,6 +36,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "auxiliary_bucket"
 resource "aws_s3_bucket" "temporary_bucket" {
   bucket        = local.envs.s3_bucket_temp
   force_destroy = true
+  tags          = local.component_tags.glue_agg
 }
 
 resource "aws_s3_bucket_public_access_block" "temporary_bucket" {
@@ -75,6 +77,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "temporary_bucket_lifecycle" {
 resource "aws_s3_bucket" "sor_bucket" {
   bucket        = local.envs.s3_bucket_sor
   force_destroy = true
+  tags          = local.component_tags.lambda_api
 }
 
 resource "aws_s3_bucket_public_access_block" "sor_bucket" {
@@ -102,6 +105,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "sor_bucket" {
 resource "aws_s3_bucket" "sot_bucket" {
   bucket        = local.envs.s3_bucket_sot
   force_destroy = true
+  tags          = local.component_tags.glue_etl
 }
 
 resource "aws_s3_bucket_public_access_block" "sot_bucket" {
@@ -129,6 +133,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "sot_bucket" {
 resource "aws_s3_bucket" "spec_bucket" {
   bucket        = local.envs.s3_bucket_spec
   force_destroy = true
+  tags          = local.component_tags.glue_agg
 }
 
 resource "aws_s3_bucket_public_access_block" "spec_bucket" {
@@ -156,6 +161,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "spec_bucket" {
 resource "aws_s3_bucket" "data_quality_bucket" {
   bucket        = local.envs.s3_bucket_data_quality
   force_destroy = true
+  tags          = local.component_tags.glue_data_quality
 }
 
 resource "aws_s3_bucket_public_access_block" "data_quality_bucket" {
