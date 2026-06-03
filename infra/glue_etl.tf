@@ -22,7 +22,7 @@ resource "aws_glue_job" "etl_job_pythonshell" {
   default_arguments = {
     "--job-language" = "python"
     # Pacote com os modulos auxiliares importados pelo script principal.
-    "--extra-py-files" = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_etl_job_name}/app/utils.py"
+    "--extra-py-files" = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_etl_job_name}/app_bundle.zip"
     # Dependencias do Glue ETL instaladas no proprio runtime Linux do Glue.
     "--additional-python-modules" = local.glue_etl_additional_python_modules
     # Prefixo personalizado para os grupos /<job>/error e /<job>/output.
@@ -72,12 +72,29 @@ resource "aws_s3_object" "deploy_scripts_bucket_etl" {
 }
 
 
-# Envia o modulo auxiliar para o S3, usado em --extra-py-files no job Glue.
+# Empacota src/ como subdiretorio no zip para que `from src.utils import ...` funcione.
+data "archive_file" "glue_app_bundle_etl" {
+  type        = "zip"
+  output_path = "${path.module}/glue_app_bundle_etl.zip"
+
+  source {
+    content  = file("${local.glue_etl_src_path}/src/__init__.py")
+    filename = "src/__init__.py"
+  }
+
+  source {
+    content  = file("${local.glue_etl_src_path}/src/utils.py")
+    filename = "src/utils.py"
+  }
+}
+
+
+# Envia o pacote zipado para o S3, usado em --extra-py-files no job Glue.
 resource "aws_s3_object" "deploy_app_bundle_etl" {
   bucket     = aws_s3_bucket.auxiliary_bucket.id
-  key        = "${local.envs.glue_etl_job_name}/app/utils.py"
-  source     = "${local.glue_etl_src_path}/src/utils.py"
-  etag       = filemd5("${local.glue_etl_src_path}/src/utils.py")
+  key        = "${local.envs.glue_etl_job_name}/app_bundle.zip"
+  source     = data.archive_file.glue_app_bundle_etl.output_path
+  etag       = data.archive_file.glue_app_bundle_etl.output_md5
   tags       = local.component_tags.glue_etl
   depends_on = [aws_s3_bucket.auxiliary_bucket]
 }
