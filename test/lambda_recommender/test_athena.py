@@ -5,7 +5,7 @@ Simula as chamadas ao boto3 sem fazer requisições reais à AWS.
 """
 
 import unittest
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 
 # Variáveis de ambiente necessárias antes do import do módulo

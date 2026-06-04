@@ -6,7 +6,7 @@ Simula search_catalog e recommend para testar apenas o fluxo do handler.
 
 import json
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 ENV_VARS = {
     "ATHENA_DATABASE": "db_tmdb",
