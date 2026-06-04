@@ -5,7 +5,6 @@ Executa uma query SQL dinâmica contra tb_discover_unified_tmdb,
 aplicando filtros opcionais de gênero, idioma, período e nota mínima.
 """
 
-import json
 import logging
 import os
 import time
