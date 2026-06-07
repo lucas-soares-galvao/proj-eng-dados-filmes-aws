@@ -123,7 +123,18 @@ def _fetch_tmdb_detail(api_key: str, media_type: str, item_id: int) -> dict:
         timeout=30,
     )
     response.raise_for_status()
-    return response.json()
+    detail = response.json()
+
+    if not detail.get("overview", "").strip():
+        response_en = requests.get(
+            f"https://api.themoviedb.org/3/{media_type}/{item_id}",
+            params={"api_key": api_key, "language": "en-US"},
+            timeout=30,
+        )
+        response_en.raise_for_status()
+        detail["overview"] = response_en.json().get("overview", "")
+
+    return detail
 
 
 def enrich_with_runtime(
@@ -141,6 +152,8 @@ def enrich_with_runtime(
     def fetch_one(idx: int, item: dict) -> tuple:
         try:
             detail = _fetch_tmdb_detail(api_key, media_type, item["id"])
+            if not item.get("overview", "").strip():
+                item["overview"] = detail.get("overview", "")
             if media_type == "movie":
                 item["runtime"] = detail.get("runtime")
             else:
