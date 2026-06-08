@@ -88,7 +88,7 @@ def main() -> None:
     trigger_data_quality(
         dq_job_name=dq_job_name,
         table_name=table_name,
-        database=database_unified,
+        database=database,
         year=year,
     )
 
