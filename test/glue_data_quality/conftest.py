@@ -50,7 +50,7 @@ sys.modules.setdefault(
     _make_module(
         "pyspark.sql.functions",
         coalesce=None,
-        col=None,
+        col=MagicMock(),
         from_utc_timestamp=None,
         lit=None,
         current_timestamp=None,
