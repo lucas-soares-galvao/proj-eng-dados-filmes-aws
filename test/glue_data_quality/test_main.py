@@ -10,6 +10,7 @@ _BASE_ARGS = {
     "DATABASE": "db_tmdb",
     "S3_BUCKET_DATA_QUALITY": "my-dq-bucket",
     "ENVIRONMENT": "dev",
+    "SNS_TOPIC_ARN": "arn:aws:sns:sa-east-1:123456789012:test-topic",
 }
 
 
@@ -39,6 +40,7 @@ def _run_main(args=None, ruleset="Rules = []", dynamic_frame=None, df_results=No
         ) as mock_read,
         patch.object(m, "evaluate_data_quality", return_value=df_results) as mock_eval,
         patch.object(m, "write_results_to_s3") as mock_write,
+        patch.object(m, "notify_failed_outcomes"),
     ):
         mock_sc_cls.getOrCreate.return_value = sc_mock
         mock_gc_cls.return_value = glue_context_mock
