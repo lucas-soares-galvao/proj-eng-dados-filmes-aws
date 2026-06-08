@@ -10,6 +10,10 @@ EXPECTED_TABLES = [
     "tb_genre_tv_tmdb",
     "tb_discover_movie_tmdb",
     "tb_discover_tv_tmdb",
+    "tb_details_movie_tmdb",
+    "tb_details_tv_tmdb",
+    "tb_watch_providers_movie_tmdb",
+    "tb_watch_providers_tv_tmdb",
 ]
 
 
@@ -62,6 +66,8 @@ class TestRulesetsDq:
             "tb_genre_tv_tmdb",
             "tb_discover_movie_tmdb",
             "tb_discover_tv_tmdb",
+            "tb_details_movie_tmdb",
+            "tb_details_tv_tmdb",
         ]
         for table in tables_with_id:
             rules = rulesets_dq[table]

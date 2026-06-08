@@ -195,6 +195,24 @@ resource "aws_iam_role_policy" "glue_etl_start_dq" {
 }
 
 # =========================
+# ETL - Start Details Job
+# =========================
+# Permite que o Glue ETL inicie o job Details ao final do run tv + discover.
+resource "aws_iam_role_policy" "glue_etl_start_details" {
+  name = "glue-etl-start-details"
+  role = aws_iam_role.glue_etl_role.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["glue:StartJobRun"]
+      Resource = ["arn:aws:glue:*:*:job/${local.envs.glue_details_job_name}"]
+    }]
+  })
+}
+
+# =========================
 # DQ - Read SOT
 # =========================
 resource "aws_iam_role_policy" "glue_dq_read_sot" {
@@ -238,6 +256,26 @@ resource "aws_iam_role_policy" "glue_dq_write_results" {
       Resource = [
         "arn:aws:s3:::${local.envs.s3_bucket_data_quality}",
         "arn:aws:s3:::${local.envs.s3_bucket_data_quality}/*"
+      ]
+    }]
+  })
+}
+
+# =========================
+# DQ - SNS Publish (notificação de métrica Failed)
+# =========================
+resource "aws_iam_role_policy" "glue_dq_sns_publish" {
+  name = "glue-dq-sns-publish"
+  role = aws_iam_role.glue_dq_role.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = ["sns:Publish"]
+      Resource = [
+        aws_sns_topic.glue_data_quality_failure_notifications.arn,
+        aws_sns_topic.glue_data_quality_metrics_notifications.arn
       ]
     }]
   })
@@ -293,11 +331,44 @@ data "aws_iam_policy_document" "glue_data_quality_failure_topic_policy" {
       values   = [aws_cloudwatch_event_rule.glue_data_quality_failed.arn]
     }
   }
+
+  statement {
+    sid    = "AllowGlueDQRolePublish"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.glue_dq_role.arn]
+    }
+
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.glue_data_quality_failure_notifications.arn]
+  }
 }
 
 resource "aws_sns_topic_policy" "glue_data_quality_failure_topic_policy" {
   arn    = aws_sns_topic.glue_data_quality_failure_notifications.arn
   policy = data.aws_iam_policy_document.glue_data_quality_failure_topic_policy.json
+}
+
+data "aws_iam_policy_document" "glue_data_quality_metrics_topic_policy" {
+  statement {
+    sid    = "AllowGlueDQRolePublish"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.glue_dq_role.arn]
+    }
+
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.glue_data_quality_metrics_notifications.arn]
+  }
+}
+
+resource "aws_sns_topic_policy" "glue_data_quality_metrics_topic_policy" {
+  arn    = aws_sns_topic.glue_data_quality_metrics_notifications.arn
+  policy = data.aws_iam_policy_document.glue_data_quality_metrics_topic_policy.json
 }
 
 data "aws_iam_policy_document" "lambda_failure_topic_policy" {
@@ -516,5 +587,31 @@ data "aws_iam_policy_document" "glue_agg_failure_topic_policy" {
 resource "aws_sns_topic_policy" "glue_agg_failure_topic_policy" {
   arn    = aws_sns_topic.glue_agg_failure_notifications.arn
   policy = data.aws_iam_policy_document.glue_agg_failure_topic_policy.json
+}
+
+data "aws_iam_policy_document" "glue_details_failure_topic_policy" {
+  statement {
+    sid    = "AllowEventBridgePublish"
+    effect = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+
+    actions   = ["SNS:Publish"]
+    resources = [aws_sns_topic.glue_details_failure_notifications.arn]
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.glue_details_failed.arn]
+    }
+  }
+}
+
+resource "aws_sns_topic_policy" "glue_details_failure_topic_policy" {
+  arn    = aws_sns_topic.glue_details_failure_notifications.arn
+  policy = data.aws_iam_policy_document.glue_details_failure_topic_policy.json
 }
 

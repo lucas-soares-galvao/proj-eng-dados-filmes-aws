@@ -31,19 +31,48 @@ from awsglue.utils import getResolvedOptions
 
 SOR_KEYS = {
     "movie": {
-        "genre": "tmdb/genre/movie/generos_filmes.json",
-        "configuration": "tmdb/configuration/languages/idiomas.json",
-        "discover": "tmdb/discover/movie/ano={year}/",
+        "genre":                "tmdb/genre/movie/generos_filmes.json",
+        "configuration":        "tmdb/configuration/languages/idiomas.json",
+        "discover":             "tmdb/discover/movie/ano={year}/",
+        "watch_providers_ref":  "tmdb/watch_providers_ref/movie/watch_providers_ref.json",
     },
     "tv": {
-        "genre": "tmdb/genre/tv/generos_series.json",
-        "configuration": "tmdb/configuration/countries/paises.json",
-        "discover": "tmdb/discover/tv/ano={year}/",
+        "genre":                "tmdb/genre/tv/generos_series.json",
+        "configuration":        "tmdb/configuration/countries/paises.json",
+        "discover":             "tmdb/discover/tv/ano={year}/",
+        "watch_providers_ref":  "tmdb/watch_providers_ref/tv/watch_providers_ref.json",
     },
 }
 
+_CANONICAL_SUFFIXES = [
+    " Amazon Channel",
+    " Apple TV Channel",
+    " Apple Channel",
+    " Plus Premium",
+    " Premium",
+    " Standard with Ads",
+    " with Ads",
+]
+
+_CANONICAL_OVERRIDES = {
+    "Paramount Plus": "Paramount+",
+    "Paramount":      "Paramount+",   # "Paramount Plus Premium" → strip " Plus Premium" → aqui
+    "MGM Plus":       "MGM+",         # "MGM Plus Amazon Channel" → strip sufixo → aqui
+    "Claro video":    "Claro Video",
+}
+
+
+def derive_canonical_name(name: str) -> str:
+    """Remove sufixos de canal/variante e aplica overrides manuais para normalizar o nome."""
+    result = name.strip()
+    lower = result.lower()
+    for suffix in _CANONICAL_SUFFIXES:
+        if lower.endswith(suffix.lower()):
+            result = result[: -len(suffix)]
+            break
+    return _CANONICAL_OVERRIDES.get(result, result)
+
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 # ---------------------------------------------------------------------------
@@ -86,11 +115,12 @@ def get_parameters_glue() -> Dict[str, Any]:
         "TABLE_TYPE",
         "GLUE_DATA_QUALITY_JOB_NAME",
         "GLUE_AGG_JOB_NAME",
+        "GLUE_DETAILS_JOB_NAME",
     ]
     args = get_resolved_option(required_args)
 
     try:
-        args.update(get_resolved_option(["YEAR"]))
+        args.update(get_resolved_option(["YEAR", "END_YEAR"]))
     except SystemExit:
         pass
 
@@ -127,10 +157,14 @@ def read_from_sor(
         configuration/countries/paises.json (tv) via boto3.
         O payload é um array direto de objetos.
 
+      "watch_providers_ref"
+        Lê tmdb/watch_providers_ref/{media_type}/watch_providers_ref.json via boto3.
+        Deriva canonical_name a partir de provider_name usando derive_canonical_name.
+
     Args:
         s3_bucket_sor: Nome do bucket SOR.
         media_type:    "movie" ou "tv".
-        table_type:    "discover", "genre" ou "configuration".
+        table_type:    "discover", "genre", "configuration" ou "watch_providers_ref".
         year:          Ano da partição. Obrigatório quando table_type="discover".
 
     Returns:
@@ -142,6 +176,12 @@ def read_from_sor(
     if table_type == "discover":
         df = wr.s3.read_json(path=f"s3://{s3_bucket_sor}/{s3_key}", orient="records")
         df["year"] = year
+    elif table_type == "watch_providers_ref":
+        s3_client = boto3.client("s3")
+        response = s3_client.get_object(Bucket=s3_bucket_sor, Key=s3_key)
+        data = json.loads(response["Body"].read())
+        df = pd.DataFrame(data)
+        df["canonical_name"] = df["provider_name"].apply(derive_canonical_name)
     else:
         s3_client = boto3.client("s3")
         response = s3_client.get_object(Bucket=s3_bucket_sor, Key=s3_key)
@@ -213,7 +253,7 @@ def trigger_data_quality(
     Args:
         dq_job_name: Nome do job Glue Data Quality cadastrado na AWS.
         table_name:  Nome da tabela a validar (usado para buscar o ruleset).
-        database:    Nome do banco de dados no Glue Catalog.
+        database:    Nome do banco de dados de origem no Glue Catalog.
         year:        Ano da partição. Informado apenas para discover.
 
     Returns:
@@ -261,4 +301,49 @@ def trigger_agg(agg_job_name: str) -> str:
     response = glue_client.start_job_run(JobName=agg_job_name)
     run_id = response["JobRunId"]
     logger.info(f"Job AGG '{agg_job_name}' iniciado. RunId: {run_id}")
+    return run_id
+
+
+# ---------------------------------------------------------------------------
+# Acionamento do Glue Details
+# ---------------------------------------------------------------------------
+
+
+def trigger_details(
+    details_job_name: str,
+    media_type: str,
+    year: str,
+    end_year: str,
+    database: str,
+) -> str:
+    """
+    Aciona o job Glue Details para buscar runtime/temporadas via API TMDB.
+
+    Chamado em todo run de discover (movie e tv), passando o media_type e o
+    ano exato processado. O Glue Details busca detalhes apenas para esse
+    media_type/ano e aciona o AGG somente no último run (tv + end_year).
+
+    Args:
+        details_job_name: Nome do job Glue Details cadastrado na AWS.
+        media_type:       "movie" ou "tv".
+        year:             Ano de discover processado neste run.
+        end_year:         Último ano do intervalo — usado pelo Details para
+                          decidir se aciona o AGG.
+        database:         Nome do banco no Glue Catalog correspondente ao media_type.
+
+    Returns:
+        O ID de execução do job (JobRunId).
+    """
+    glue_client = boto3.client("glue")
+    response = glue_client.start_job_run(
+        JobName=details_job_name,
+        Arguments={
+            "--MEDIA_TYPE": media_type,
+            "--YEAR":       year,
+            "--END_YEAR":   end_year,
+            "--DATABASE":   database,
+        },
+    )
+    run_id = response["JobRunId"]
+    logger.info(f"Job Details '{details_job_name}' iniciado. RunId: {run_id}")
     return run_id

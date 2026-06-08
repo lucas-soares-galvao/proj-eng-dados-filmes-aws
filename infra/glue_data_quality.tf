@@ -30,6 +30,8 @@ resource "aws_glue_job" "data_quality_job" {
     "--custom-logGroup-prefix"    = "/${local.envs.glue_data_quality_job_name}"
     "--S3_BUCKET_DATA_QUALITY"    = local.envs.s3_bucket_data_quality
     "--ENVIRONMENT"               = var.env
+    "--SNS_TOPIC_ARN_DQ_METRICS"  = aws_sns_topic.glue_data_quality_metrics_notifications.arn
+    "--DATABASE_RESULTS"          = var.glue_catalog_database_unified_name
   }
 
   tags = local.component_tags.glue_data_quality
@@ -47,7 +49,7 @@ resource "aws_glue_job" "data_quality_job" {
   ]
 
   execution_property {
-    max_concurrent_runs = 8
+    max_concurrent_runs = 10
   }
 }
 

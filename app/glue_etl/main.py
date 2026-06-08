@@ -7,7 +7,8 @@ Este arquivo contém apenas a lógica principal do fluxo:
   3. Chama read_from_sor para ler os dados do SOR (dispatch por table_type).
   4. Chama write_parquet_to_sot para gravar no SOT em Parquet e atualizar o Catalog.
   5. Aciona o job Glue Data Quality para validar a tabela recém-escrita.
-  6. Se media_type="tv", aciona o job Glue AGG para unificar discover movie e tv no SPEC.
+  6. Se media_type="tv" e table_type="discover", aciona o Glue Details para buscar
+     runtime/temporadas via API TMDB. O Glue Details, ao concluir, aciona o Glue AGG.
 
 A Lambda aciona este job com --TABLE_TYPE em cada run:
   - "genre"         : processa a tabela de gêneros.
@@ -16,28 +17,39 @@ A Lambda aciona este job com --TABLE_TYPE em cada run:
 """
 
 import logging
+import sys
 
 from src.utils import (
     get_parameters_glue,
     read_from_sor,
-    trigger_agg,
     trigger_data_quality,
+    trigger_details,
     write_parquet_to_sot,
 )
 
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    force=True,
+)
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
+# Tabelas de dispatch: mapeiam table_type para o comportamento de escrita no SOT.
+# "discover" usa overwrite_partitions (sobrescreve só o ano recebido, preservando os demais).
+# Os demais tipos sobrescrevem a tabela inteira a cada run, pois não têm partição.
 _TABLE_TYPE_TO_PARTITION = {
-    "discover": ["year"],
-    "genre": None,
-    "configuration": None,
+    "discover":            ["year"],
+    "genre":               None,
+    "configuration":       None,
+    "watch_providers_ref": None,
 }
 
 _TABLE_TYPE_TO_MODE = {
-    "discover": "overwrite_partitions",
-    "genre": "overwrite",
-    "configuration": "overwrite",
+    "discover":            "overwrite_partitions",
+    "genre":               "overwrite",
+    "configuration":       "overwrite",
+    "watch_providers_ref": "overwrite",
 }
 
 
@@ -48,12 +60,13 @@ def main() -> None:
     s3_bucket_sor = args["S3_BUCKET_SOR"]
     s3_bucket_sot = args["S3_BUCKET_SOT"]
     media_type = args["MEDIA_TYPE"]
-    database = args["DATABASE"]
+    database          = args["DATABASE"]
     table_type = args["TABLE_TYPE"]
     table_name = args["TABLE_NAME"]
-    dq_job_name = args["GLUE_DATA_QUALITY_JOB_NAME"]
-    agg_job_name = args["GLUE_AGG_JOB_NAME"]
-    year = args.get("YEAR")
+    dq_job_name      = args["GLUE_DATA_QUALITY_JOB_NAME"]
+    details_job_name = args["GLUE_DETAILS_JOB_NAME"]
+    year       = args.get("YEAR")
+    end_year   = args.get("END_YEAR")
 
     partition_cols = _TABLE_TYPE_TO_PARTITION[table_type]
     mode = _TABLE_TYPE_TO_MODE[table_type]
@@ -78,10 +91,18 @@ def main() -> None:
         year=year,
     )
 
-    # Dispara o AGG somente no run de tv + discover — o último processo a concluir,
-    # garantindo que movie e tv já estão disponíveis no SOT antes da agregação.
-    if media_type == "tv" and table_type == "discover":
-        trigger_agg(agg_job_name=agg_job_name)
+    # Dispara o Details em todo run de discover — um run por media_type/ano.
+    # O Glue Details coleta runtime/temporadas via API TMDB para o ano recebido
+    # e aciona o AGG apenas no último run (tv + end_year), quando todos os
+    # detalhes de filmes e séries já estão no SOT.
+    if table_type == "discover":
+        trigger_details(
+            details_job_name=details_job_name,
+            media_type=media_type,
+            year=year,
+            end_year=end_year,
+            database=database,
+        )
 
     logger.info("Job Glue ETL finalizado com sucesso!")
 

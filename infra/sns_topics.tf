@@ -3,7 +3,7 @@
 # SNS Topic para notificações de falha do Glue Data Quality
 resource "aws_sns_topic" "glue_data_quality_failure_notifications" {
   name         = "glue-data-quality-failure-notifications"
-  display_name = "[${upper(var.env)}] PIPELINE - FALHA - GLUE DATA QUALITY"
+  display_name = "[${upper(var.env)}] FALHA - GLUE DATA QUALITY"
   tags         = local.component_tags.glue_data_quality
 }
 
@@ -14,10 +14,24 @@ resource "aws_sns_topic_subscription" "glue_data_quality_failure_email" {
   endpoint  = var.glue_data_quality_notification_email
 }
 
+# SNS Topic para notificações de resultado da avaliação de métricas do Glue Data Quality
+resource "aws_sns_topic" "glue_data_quality_metrics_notifications" {
+  name         = "glue-data-quality-metrics-notifications"
+  display_name = "[${upper(var.env)}] QUALIDADE - AVALIAÇÃO DE MÉTRICAS"
+  tags         = local.component_tags.glue_data_quality
+}
+
+# Assinatura de e-mail no SNS para resultado da avaliação de métricas do Glue Data Quality
+resource "aws_sns_topic_subscription" "glue_data_quality_metrics_email" {
+  topic_arn = aws_sns_topic.glue_data_quality_metrics_notifications.arn
+  protocol  = "email"
+  endpoint  = var.glue_data_quality_metrics_notification_email
+}
+
 # SNS Topic para notificações de falha do Glue ETL
 resource "aws_sns_topic" "glue_etl_failure_notifications" {
   name         = "glue-etl-failure-notifications"
-  display_name = "[${upper(var.env)}] PIPELINE - FALHA - GLUE ETL"
+  display_name = "[${upper(var.env)}] FALHA - GLUE ETL"
   tags         = local.component_tags.glue_etl
 }
 
@@ -31,7 +45,7 @@ resource "aws_sns_topic_subscription" "glue_etl_failure_email" {
 # SNS Topic para notificações de falha da Lambda
 resource "aws_sns_topic" "lambda_failure_notifications" {
   name         = "lambda-failure-notifications"
-  display_name = "[${upper(var.env)}] PIPELINE - FALHA - LAMBDA"
+  display_name = "[${upper(var.env)}] FALHA - LAMBDA"
   tags         = local.component_tags.lambda_api
 }
 
@@ -45,7 +59,7 @@ resource "aws_sns_topic_subscription" "lambda_failure_email" {
 # SNS Topic para notificações de falha do EventBridge
 resource "aws_sns_topic" "eventbridge_failure_notifications" {
   name         = "eventbridge-failure-notifications"
-  display_name = "[${upper(var.env)}] PIPELINE - FALHA - EVENTBRIDGE"
+  display_name = "[${upper(var.env)}] FALHA - EVENTBRIDGE"
   tags         = local.component_tags.eventbridge
 }
 
@@ -72,7 +86,7 @@ resource "aws_sns_topic_subscription" "glue_agg_success_email" {
 # SNS Topic para notificações de falha do Glue AGG
 resource "aws_sns_topic" "glue_agg_failure_notifications" {
   name         = "glue-agg-failure-notifications"
-  display_name = "[${upper(var.env)}] PIPELINE - FALHA - GLUE AGG"
+  display_name = "[${upper(var.env)}] FALHA - GLUE AGG"
   tags         = local.component_tags.glue_agg
 }
 
@@ -80,4 +94,17 @@ resource "aws_sns_topic_subscription" "glue_agg_failure_email" {
   topic_arn = aws_sns_topic.glue_agg_failure_notifications.arn
   protocol  = "email"
   endpoint  = var.glue_agg_notification_email
+}
+
+# SNS Topic para notificações de falha do Glue Details
+resource "aws_sns_topic" "glue_details_failure_notifications" {
+  name         = "glue-details-failure-notifications"
+  display_name = "[${upper(var.env)}] FALHA - GLUE DETAILS"
+  tags         = local.component_tags.glue_details
+}
+
+resource "aws_sns_topic_subscription" "glue_details_failure_email" {
+  topic_arn = aws_sns_topic.glue_details_failure_notifications.arn
+  protocol  = "email"
+  endpoint  = var.glue_details_notification_email
 }

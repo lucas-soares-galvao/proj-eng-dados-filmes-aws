@@ -14,9 +14,11 @@ Este arquivo contém apenas a lógica principal do fluxo, em ordem:
 
 Este job é acionado pelo Glue ETL logo após gravar cada tabela no SOT.
 O Glue ETL passa os argumentos --TABLE_NAME, --DATABASE e opcionalmente --YEAR.
+--DATABASE_RESULTS é fixo no default_arguments do job (infra/glue_data_quality.tf).
 """
 
 import logging
+import sys
 
 from awsglue.context import GlueContext
 from pyspark.context import SparkContext
@@ -25,12 +27,18 @@ from src.utils import (
     evaluate_data_quality,
     get_parameters_glue,
     get_ruleset,
+    notify_failed_outcomes,
     read_table_from_catalog,
     write_results_to_s3,
 )
 
+logging.basicConfig(
+    stream=sys.stdout,
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    force=True,
+)
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
 
 
 def main() -> None:
@@ -48,7 +56,10 @@ def main() -> None:
     args = get_parameters_glue()
     table_name = args["TABLE_NAME"]
     database = args["DATABASE"]
+    database_results = args["DATABASE_RESULTS"]
     s3_bucket_data_quality = args["S3_BUCKET_DATA_QUALITY"]
+    environment = args["ENVIRONMENT"]
+    sns_topic_arn_dq_metrics = args["SNS_TOPIC_ARN_DQ_METRICS"]
     year = args.get("YEAR")  # None para tabelas sem partição (gêneros, config)
 
     logger.info(
@@ -74,7 +85,15 @@ def main() -> None:
     # --- 6. Grava o resultado no bucket de Data Quality ---
     # Para discover: particionado por source_table + partition (ano), sobrescrevendo
     # apenas aquele ano. Para genre/config: sobrescreve apenas source_table.
-    write_results_to_s3(df_results, s3_bucket_data_quality, table_name, database, year)
+    write_results_to_s3(
+        df_results,
+        s3_bucket_data_quality,
+        table_name,
+        database_results,
+        year,
+    )
+
+    notify_failed_outcomes(df_results, table_name, sns_topic_arn_dq_metrics, environment)
 
     logger.info("Job Glue Data Quality finalizado com sucesso!")
 

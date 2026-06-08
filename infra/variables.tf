@@ -36,8 +36,18 @@ variable "glue_agg_notification_email" {
   type        = string
   default     = "lsgalvao1000@gmail.com"
 }
+variable "glue_details_notification_email" {
+  description = "E-mail para receber notificacoes de falha do Glue Details"
+  type        = string
+  default     = "lsgalvao1000@gmail.com"
+}
 variable "glue_data_quality_notification_email" {
   description = "E-mail para receber notificações de execução do Glue Data Quality"
+  type        = string
+  default     = "lsgalvao1000@gmail.com"
+}
+variable "glue_data_quality_metrics_notification_email" {
+  description = "E-mail para receber notificações de avaliação de métricas do Glue Data Quality"
   type        = string
   default     = "lsgalvao1000@gmail.com"
 }
@@ -150,16 +160,40 @@ variable "glue_agg_job_name" {
   default     = "glue-agg"
 }
 
+variable "glue_details_path_app" {
+  description = "Caminho para os modulos Python da aplicacao do Glue Details"
+  type        = string
+  default     = "glue_details"
+}
+
+variable "glue_details_job_name" {
+  description = "Nome do job Glue Details a ser criado por ambiente"
+  type        = string
+  default     = "glue-details"
+}
+
 variable "glue_agg_spec_table_name" {
   description = "Nome da tabela unificada gravada no bucket SPEC pelo Glue AGG"
   type        = string
   default     = "tb_discover_unified_tmdb"
 }
 
-variable "glue_catalog_database_name" {
-  description = "Nome do banco no Glue Catalog para a tabela TMDB"
+variable "glue_catalog_database_movie_name" {
+  description = "Nome do banco no Glue Catalog para tabelas de filmes TMDB"
   type        = string
-  default     = "db_tmdb"
+  default     = "db_movie_tmdb"
+}
+
+variable "glue_catalog_database_tv_name" {
+  description = "Nome do banco no Glue Catalog para tabelas de séries TMDB"
+  type        = string
+  default     = "db_tv_tmdb"
+}
+
+variable "glue_catalog_database_unified_name" {
+  description = "Nome do banco no Glue Catalog para a tabela unificada e referências TMDB"
+  type        = string
+  default     = "db_unified_tmdb"
 }
 
 variable "glue_catalog_table_discover_movie_name" {
@@ -203,6 +237,42 @@ variable "glue_catalog_table_data_quality_name" {
   description = "Nome da tabela no Glue Catalog para resultados de Data Quality"
   type        = string
   default     = "tb_data_quality_tmdb"
+}
+
+variable "glue_catalog_table_details_movie_name" {
+  description = "Nome da tabela no Glue Catalog para detalhes de filmes (runtime)"
+  type        = string
+  default     = "tb_details_movie_tmdb"
+}
+
+variable "glue_catalog_table_details_tv_name" {
+  description = "Nome da tabela no Glue Catalog para detalhes de series (temporadas, episodios)"
+  type        = string
+  default     = "tb_details_tv_tmdb"
+}
+
+variable "glue_catalog_table_watch_providers_movie_name" {
+  description = "Nome da tabela no Glue Catalog para watch providers BR de filmes"
+  type        = string
+  default     = "tb_watch_providers_movie_tmdb"
+}
+
+variable "glue_catalog_table_watch_providers_tv_name" {
+  description = "Nome da tabela no Glue Catalog para watch providers BR de series"
+  type        = string
+  default     = "tb_watch_providers_tv_tmdb"
+}
+
+variable "glue_catalog_table_watch_providers_ref_movie_name" {
+  description = "Nome da tabela no Glue Catalog para a lista de referência de provedores de filmes"
+  type        = string
+  default     = "tb_watch_providers_ref_movie_tmdb"
+}
+
+variable "glue_catalog_table_watch_providers_ref_tv_name" {
+  description = "Nome da tabela no Glue Catalog para a lista de referência de provedores de series"
+  type        = string
+  default     = "tb_watch_providers_ref_tv_tmdb"
 }
 
 ############# CLOUDWATCH LOGS ##############
