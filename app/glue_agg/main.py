@@ -42,10 +42,13 @@ def main() -> None:
     table_name = args["TABLE_NAME"]
 
     logger.info(
-        f"Iniciando Glue AGG | tabela destino: '{table_name}' | banco: '{database}'"
+        f"Iniciando Glue AGG | tabela destino: '{table_name}' | database='{database}'"
     )
 
-    df = run_athena_query(database=database, s3_bucket_temp=s3_bucket_temp)
+    df = run_athena_query(
+        database=database,
+        s3_bucket_temp=s3_bucket_temp,
+    )
     df = traduzir_colunas_en(df)
     write_parquet_to_spec(
         df=df,
