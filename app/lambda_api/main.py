@@ -123,8 +123,8 @@ def lambda_handler(event, context):
     api_key = get_tmdb_api_key(TMDB_SECRET_ARN)
 
     current_year = datetime.now().year
-    start_year   = current_year - 1
-    end_year     = current_year
+    start_year   = int(event.get("start_year", current_year - 1))
+    end_year     = int(event.get("end_year",   current_year))
 
     # Coleta gêneros e aciona o Glue passando apenas a tabela de gêneros
     logger.info(f"Coletando gêneros do TMDB para '{content_type}'...")
@@ -195,5 +195,5 @@ def lambda_handler(event, context):
     logger.info(f"Coleta de '{content_type}' finalizada com sucesso!")
     return {
         "statusCode": 200,
-        "body": f"Dados de '{content_type}' coletados de {start_year} a {current_year} com sucesso.",
+        "body": f"Dados de '{content_type}' coletados de {start_year} a {end_year} com sucesso.",
     }
