@@ -224,9 +224,9 @@ FROM unified u
 LEFT JOIN genre_names gn
     ON  gn.id         = u.id
     AND gn.media_type = u.media_type
-LEFT JOIN {db_unified}.tb_configuration_languages_tmdb lang
+LEFT JOIN {db_movie}.tb_configuration_languages_tmdb lang
     ON lang.iso_639_1 = u.original_language
-LEFT JOIN {db_unified}.tb_configuration_countries_tmdb ctry
+LEFT JOIN {db_tv}.tb_configuration_countries_tmdb ctry
     ON ctry.iso_3166_1 = element_at(u.origin_country, 1)
 LEFT JOIN movie_details md
     ON  md.id = u.id AND u.media_type = 'movie'

@@ -642,3 +642,21 @@ class TestNotifyFailedOutcomes:
             call_kwargs = mock_boto3.client.return_value.publish.call_args[1]
             assert 'IsComplete "id"' in call_kwargs["Message"]
             assert "RowCount > 0" in call_kwargs["Message"]
+
+    def test_message_contains_partition_when_year_provided(self):
+        """Quando year é fornecido, o corpo do e-mail deve indicar a partição avaliada."""
+        row = self._make_row("RowCount > 0", "Row count is 0")
+        df, _ = self._make_df([row])
+        with patch("src.utils.boto3") as mock_boto3:
+            notify_failed_outcomes(df, "tb_discover_movie_tmdb", self._SNS_ARN, "dev", year="2024")
+            call_kwargs = mock_boto3.client.return_value.publish.call_args[1]
+            assert "year=2024" in call_kwargs["Message"]
+
+    def test_message_does_not_contain_partition_when_year_is_none(self):
+        """Quando year não é fornecido, o corpo do e-mail não deve mencionar partição."""
+        row = self._make_row("RowCount > 0", "Row count is 0")
+        df, _ = self._make_df([row])
+        with patch("src.utils.boto3") as mock_boto3:
+            notify_failed_outcomes(df, "tb_genre_movie_tmdb", self._SNS_ARN, "dev")
+            call_kwargs = mock_boto3.client.return_value.publish.call_args[1]
+            assert "Partição" not in call_kwargs["Message"]
