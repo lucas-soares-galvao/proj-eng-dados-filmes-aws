@@ -162,17 +162,39 @@ resource "aws_iam_role_policy" "glue_etl_catalog" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "glue:GetTable",
-        "glue:CreateTable",
-        "glue:UpdateTable",
-        "glue:GetPartitions",
-        "glue:CreatePartition"
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid    = "ReadCatalog"
+        Effect = "Allow"
+        Action = [
+          "glue:GetTable",
+          "glue:GetPartitions",
+        ]
+        Resource = [
+          "arn:aws:glue:*:*:catalog",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_movie_name}",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_tv_name}",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_movie_name}/*",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_tv_name}/*",
+        ]
+      },
+      {
+        Sid    = "WriteSOTTable"
+        Effect = "Allow"
+        Action = [
+          "glue:CreateTable",
+          "glue:UpdateTable",
+          "glue:CreatePartition",
+        ]
+        Resource = [
+          "arn:aws:glue:*:*:catalog",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_movie_name}",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_tv_name}",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_movie_name}/*",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_tv_name}/*",
+        ]
+      }
+    ]
   })
 }
 
@@ -495,19 +517,41 @@ resource "aws_iam_role_policy" "glue_agg_catalog" {
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Action = [
-        "glue:GetDatabase",
-        "glue:GetTable",
-        "glue:CreateTable",
-        "glue:UpdateTable",
-        "glue:GetPartitions",
-        "glue:BatchCreatePartition",
-        "glue:CreatePartition"
-      ]
-      Resource = "*"
-    }]
+    Statement = [
+      {
+        Sid    = "ReadCatalog"
+        Effect = "Allow"
+        Action = [
+          "glue:GetDatabase",
+          "glue:GetTable",
+          "glue:GetPartitions",
+        ]
+        Resource = [
+          "arn:aws:glue:*:*:catalog",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_movie_name}",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_tv_name}",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_unified_name}",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_movie_name}/*",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_tv_name}/*",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_unified_name}/*",
+        ]
+      },
+      {
+        Sid    = "WriteSpecTable"
+        Effect = "Allow"
+        Action = [
+          "glue:CreateTable",
+          "glue:UpdateTable",
+          "glue:BatchCreatePartition",
+          "glue:CreatePartition",
+        ]
+        Resource = [
+          "arn:aws:glue:*:*:catalog",
+          "arn:aws:glue:*:*:database/${var.glue_catalog_database_unified_name}",
+          "arn:aws:glue:*:*:table/${var.glue_catalog_database_unified_name}/*",
+        ]
+      }
+    ]
   })
 }
 
