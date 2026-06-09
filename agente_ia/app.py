@@ -111,7 +111,7 @@ if st.button("Recomendar", type="primary") and preferencia:
                     for p in streaming_providers.split(",")
                     if p.strip()
                 )
-                providers_html = f'<p class="providers-label">Onde assistir</p><div>{badges}</div>'
+                providers_html = f'<p class="duracao">📺 {badges}</p>'
 
             cards_html.append(f"""
             <div class="card">
