@@ -307,6 +307,7 @@ def notify_failed_outcomes(
     table_name: str,
     sns_topic_arn: str,
     environment: str,
+    year: Optional[str] = None,
 ) -> None:
     """
     Verifica se alguma regra DQ teve outcome "Failed" e publica no SNS.
@@ -320,6 +321,7 @@ def notify_failed_outcomes(
         table_name:    Nome da tabela avaliada.
         sns_topic_arn: ARN do tópico SNS para publicar a notificação.
         environment:   Ambiente (dev, prod) para compor o subject do e-mail.
+        year:          Partição avaliada, se aplicável.
     """
     failed_df = df.filter(col("outcome") == "Failed")
     count = failed_df.count()
@@ -333,8 +335,10 @@ def notify_failed_outcomes(
         "[DQ Métrica Falha]",
         f"Ambiente: {environment}",
         f"Tabela: {table_name}",
-        f"Regras com falha ({count}):",
     ]
+    if year is not None:
+        lines.append(f"Partição: year={year}")
+    lines.append(f"Regras com falha ({count}):")
     for row in rows:
         lines.append(f"  • {row['rule']} → {row['failure_reason']}")
 
