@@ -31,3 +31,8 @@ provider "aws" {
     tags = local.default_resource_tags
   }
 }
+
+provider "aws" {
+  alias  = "lightsail"
+  region = "us-east-1"
+}
