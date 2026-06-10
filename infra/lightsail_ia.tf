@@ -71,6 +71,7 @@ resource "aws_iam_access_key" "lightsail_agent" {
 resource "aws_lightsail_key_pair" "filmbot" {
   provider = aws.lightsail
   name     = "filmbot-key-${var.env}"
+  tags     = merge(local.default_resource_tags, { Component = "lightsail_ia" })
 }
 
 # ── Lightsail: instância ──────────────────────────────────────────────────────
