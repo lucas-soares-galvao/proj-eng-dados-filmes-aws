@@ -1,3 +1,0 @@
-openai
-awswrangler
-boto3
