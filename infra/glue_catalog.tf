@@ -377,6 +377,10 @@ resource "aws_glue_catalog_table" "tb_details_movie_tmdb" {
       name = "backdrop_path_en"
       type = "string"
     }
+    columns {
+      name = "dt_processamento"
+      type = "date"
+    }
   }
 
   partition_keys {
@@ -445,6 +449,10 @@ resource "aws_glue_catalog_table" "tb_details_tv_tmdb" {
       name = "backdrop_path_en"
       type = "string"
     }
+    columns {
+      name = "dt_processamento"
+      type = "date"
+    }
   }
 
   partition_keys {
@@ -493,6 +501,10 @@ resource "aws_glue_catalog_table" "tb_watch_providers_movie_tmdb" {
       name = "logo_path"
       type = "string"
     }
+    columns {
+      name = "dt_atualizacao"
+      type = "date"
+    }
   }
 
   partition_keys {
@@ -540,6 +552,10 @@ resource "aws_glue_catalog_table" "tb_watch_providers_tv_tmdb" {
     columns {
       name = "logo_path"
       type = "string"
+    }
+    columns {
+      name = "dt_atualizacao"
+      type = "date"
     }
   }
 
