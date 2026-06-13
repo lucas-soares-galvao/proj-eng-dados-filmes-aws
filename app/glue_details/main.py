@@ -14,6 +14,9 @@ from src.utils import (
     fetch_ids_stale_watch_providers,
     get_parameters_glue,
     get_tmdb_api_key,
+    repair_details_duplicates,
+    repair_discover_duplicates,
+    repair_watch_providers_duplicates,
     trigger_agg,
     trigger_data_quality,
 )
@@ -69,7 +72,6 @@ def main() -> None:
         database=database,
         table_details=table_details,
         s3_bucket_temp=s3_bucket_temp,
-        year=year,
     )
     new_ids = list(set(all_ids) - set(existing_ids))
 
@@ -125,9 +127,37 @@ def main() -> None:
         year=year,
     )
 
+    # Ao final do ciclo de cada media_type, remove duplicatas intra-partição nas três tabelas
+    # (movies e tvs reparados separadamente em seus respectivos runs de end_year).
+    # Deduplicação cross-year é feita pelo Glue AGG via ROW_NUMBER / DENSE_RANK.
+    if year == end_year:
+        logger.info(
+            f"Último run do ciclo ({media_type} + end_year) — "
+            "reparando duplicatas na partição atual de discover, watch_providers e details..."
+        )
+        repair_discover_duplicates(
+            database=database,
+            table_discover=table_discover,
+            s3_bucket_sot=s3_bucket_sot,
+            year=year,
+        )
+        repair_watch_providers_duplicates(
+            database=database,
+            table_watch_providers=table_watch_providers,
+            s3_bucket_sot=s3_bucket_sot,
+            year=year,
+        )
+        repair_details_duplicates(
+            database=database,
+            table_details=table_details,
+            s3_bucket_sot=s3_bucket_sot,
+            s3_bucket_temp=s3_bucket_temp,
+            year=year,
+        )
+
     # tv + end_year é o último run do ciclo; só neste ponto todos os JOINs do AGG são possíveis.
     if media_type == "tv" and year == end_year:
-        logger.info("Último run do ciclo (tv + end_year) — acionando Glue AGG...")
+        logger.info("Acionando Glue AGG...")
         trigger_agg(agg_job_name=agg_job_name)
 
     logger.info("Job Glue Details finalizado com sucesso!")

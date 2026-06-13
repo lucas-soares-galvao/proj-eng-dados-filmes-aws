@@ -82,4 +82,14 @@ rulesets_dq = {
         'IsComplete "provider_name"',
         "RowCount > 0",
     ],
+    "tb_discover_unified_tmdb": [
+        'IsComplete "id"',
+        'IsComplete "media_type"',
+        'IsComplete "title"',
+        'ColumnValues "media_type" in ["movie", "tv"]',
+        'ColumnValues "vote_average" >= 0',
+        'ColumnValues "vote_average" <= 10',
+        "RowCount > 0",
+        'Uniqueness "id" "media_type" = 1',
+    ],
 }
