@@ -2,9 +2,10 @@
 
 import logging
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import awswrangler as wr
+import boto3
 import pandas as pd
 from awsglue.utils import getResolvedOptions
 
@@ -193,14 +194,32 @@ provider_ref AS (
     WHERE rn = 1
 ),
 
+-- Seleciona apenas o ano mais recente por ID em watch_providers (filmes e séries).
+-- Evita duplicar providers quando o mesmo ID aparece em múltiplas partições de ano.
+-- DENSE_RANK (não ROW_NUMBER): atribui rank=1 a TODAS as linhas do ano mais recente por ID,
+-- preservando todos os provedores daquele ano (Netflix, Amazon, etc.) ao invés de apenas um.
+movie_wp_recent AS (
+    SELECT id, provider_type, provider_name,
+           DENSE_RANK() OVER (PARTITION BY id ORDER BY CAST(year AS INTEGER) DESC) AS rn
+    FROM {db_movie}.tb_watch_providers_movie_tmdb
+    WHERE provider_type = 'flatrate'
+),
+
+tv_wp_recent AS (
+    SELECT id, provider_type, provider_name,
+           DENSE_RANK() OVER (PARTITION BY id ORDER BY CAST(year AS INTEGER) DESC) AS rn
+    FROM {db_tv}.tb_watch_providers_tv_tmdb
+    WHERE provider_type = 'flatrate'
+),
+
 -- Provedores de streaming BR (flatrate) por filme:
 -- JOIN com provider_ref para normalizar nomes e obter prioridade,
 -- desduplicado por canonical_name, ordenado por prioridade BR crescente.
 movie_providers_ranked AS (
     SELECT wp.id, r.canonical_name, MIN(r.priority_br) AS min_priority
-    FROM {db_movie}.tb_watch_providers_movie_tmdb wp
+    FROM movie_wp_recent wp
     JOIN provider_ref r ON r.provider_name = wp.provider_name
-    WHERE wp.provider_type = 'flatrate'
+    WHERE wp.rn = 1
     GROUP BY wp.id, r.canonical_name
 ),
 
@@ -218,9 +237,9 @@ movie_providers AS (
 -- Provedores de streaming BR (flatrate) por série: mesma lógica.
 tv_providers_ranked AS (
     SELECT wp.id, r.canonical_name, MIN(r.priority_br) AS min_priority
-    FROM {db_tv}.tb_watch_providers_tv_tmdb wp
+    FROM tv_wp_recent wp
     JOIN provider_ref r ON r.provider_name = wp.provider_name
-    WHERE wp.provider_type = 'flatrate'
+    WHERE wp.rn = 1
     GROUP BY wp.id, r.canonical_name
 ),
 
@@ -238,70 +257,87 @@ tv_providers AS (
 -- ============================================================================
 -- SELECT FINAL: combina todas as CTEs e constrói a tabela SPEC
 -- ============================================================================
-SELECT
-    u.id,
-    u.media_type,
-    -- Prioriza a tradução PT gravada pelo Glue Details (title_pt/overview_pt),
-    -- que existe apenas para original_language='en'. Para outros idiomas title_pt é NULL
-    -- e o COALESCE cai para o título original do discover ou para o fallback em inglês.
-    COALESCE(md.title_pt, tv.title_pt, NULLIF(TRIM(u.title), ''), md.title_en, tv.title_en)          AS title,
-    u.original_title,
-    COALESCE(md.overview_pt, tv.overview_pt, NULLIF(TRIM(u.overview), ''), md.overview_en, tv.overview_en) AS overview,
-    u.air_date,
-    u.original_language,
-    lang.english_name                                                       AS language_name,
-    u.genre_ids,
-    gn.genre_names,   -- Ex: "Ação, Aventura, Ficção Científica"
-    -- Constrói a URL completa do pôster adicionando o prefixo da CDN do TMDB.
-    -- O TMDB armazena apenas o caminho relativo (ex: "/abc123.jpg").
-    -- "w342" é o tamanho da imagem em pixels de largura.
-    CASE
-        WHEN COALESCE(NULLIF(TRIM(u.poster_path), ''),
-                      md.poster_path_en, tv.poster_path_en) IS NULL THEN NULL
-        ELSE CONCAT('https://image.tmdb.org/t/p/w342',
-                    COALESCE(NULLIF(TRIM(u.poster_path), ''),
-                             md.poster_path_en, tv.poster_path_en))
-    END                                                                     AS poster_url,
-    -- Constrói a URL da imagem de fundo (backdrop). "w780" = largura 780px.
-    CASE
-        WHEN COALESCE(NULLIF(TRIM(u.backdrop_path), ''),
-                      md.backdrop_path_en, tv.backdrop_path_en) IS NULL THEN NULL
-        ELSE CONCAT('https://image.tmdb.org/t/p/w780',
-                    COALESCE(NULLIF(TRIM(u.backdrop_path), ''),
-                             md.backdrop_path_en, tv.backdrop_path_en))
-    END                                                                     AS backdrop_url,
-    u.popularity,
-    u.vote_average,
-    u.vote_count,
-    u.origin_country,
-    ctry.native_name                          AS origin_country_name,
-    u.adult,
-    u.year,
-    md.runtime                                AS runtime_minutes,
-    tv.number_of_seasons,
-    tv.number_of_episodes,
-    tv.episode_runtime_minutes,
-    -- Provedores de streaming BR disponíveis (apenas flatrate = assinatura).
-    -- COALESCE(mp, tp): tenta o provider de filme; se nulo, usa o de série.
-    -- Na prática, um mesmo registro é só filme ou só série, então apenas
-    -- um dos dois JOINs retornará dados (o outro será NULL).
-    COALESCE(mp.streaming_providers, tp.streaming_providers) AS streaming_providers
-FROM unified u
-LEFT JOIN genre_names gn
-    ON  gn.id         = u.id
-    AND gn.media_type = u.media_type
-LEFT JOIN {db_movie}.tb_configuration_languages_tmdb lang
-    ON lang.iso_639_1 = u.original_language
-LEFT JOIN {db_tv}.tb_configuration_countries_tmdb ctry
-    ON ctry.iso_3166_1 = element_at(u.origin_country, 1)
-LEFT JOIN movie_details md
-    ON  md.id = u.id AND u.media_type = 'movie'
-LEFT JOIN tv_details tv
-    ON  tv.id = u.id AND u.media_type = 'tv'
-LEFT JOIN movie_providers mp
-    ON  mp.id = u.id AND u.media_type = 'movie'
-LEFT JOIN tv_providers tp
-    ON  tp.id = u.id AND u.media_type = 'tv'
+spec_raw AS (
+    SELECT
+        u.id,
+        u.media_type,
+        -- Prioriza a tradução PT gravada pelo Glue Details (title_pt/overview_pt),
+        -- que existe apenas para original_language='en'. Para outros idiomas title_pt é NULL
+        -- e o COALESCE cai para o título original do discover ou para o fallback em inglês.
+        COALESCE(md.title_pt, tv.title_pt, NULLIF(TRIM(u.title), ''), md.title_en, tv.title_en)          AS title,
+        u.original_title,
+        COALESCE(md.overview_pt, tv.overview_pt, NULLIF(TRIM(u.overview), ''), md.overview_en, tv.overview_en) AS overview,
+        u.air_date,
+        u.original_language,
+        lang.english_name                                                       AS language_name,
+        u.genre_ids,
+        gn.genre_names,
+        -- Constrói a URL completa do pôster adicionando o prefixo da CDN do TMDB.
+        -- O TMDB armazena apenas o caminho relativo (ex: "/abc123.jpg").
+        -- "w342" é o tamanho da imagem em pixels de largura.
+        CASE
+            WHEN COALESCE(NULLIF(TRIM(u.poster_path), ''),
+                          md.poster_path_en, tv.poster_path_en) IS NULL THEN NULL
+            ELSE CONCAT('https://image.tmdb.org/t/p/w342',
+                        COALESCE(NULLIF(TRIM(u.poster_path), ''),
+                                 md.poster_path_en, tv.poster_path_en))
+        END                                                                     AS poster_url,
+        -- Constrói a URL da imagem de fundo (backdrop). "w780" = largura 780px.
+        CASE
+            WHEN COALESCE(NULLIF(TRIM(u.backdrop_path), ''),
+                          md.backdrop_path_en, tv.backdrop_path_en) IS NULL THEN NULL
+            ELSE CONCAT('https://image.tmdb.org/t/p/w780',
+                        COALESCE(NULLIF(TRIM(u.backdrop_path), ''),
+                                 md.backdrop_path_en, tv.backdrop_path_en))
+        END                                                                     AS backdrop_url,
+        u.popularity,
+        u.vote_average,
+        u.vote_count,
+        u.origin_country,
+        ctry.native_name                          AS origin_country_name,
+        u.adult,
+        u.year,
+        md.runtime                                AS runtime_minutes,
+        tv.number_of_seasons,
+        tv.number_of_episodes,
+        tv.episode_runtime_minutes,
+        -- Provedores de streaming BR disponíveis (apenas flatrate = assinatura).
+        -- COALESCE(mp, tp): tenta o provider de filme; se nulo, usa o de série.
+        -- Na prática, um mesmo registro é só filme ou só série, então apenas
+        -- um dos dois JOINs retornará dados (o outro será NULL).
+        COALESCE(mp.streaming_providers, tp.streaming_providers) AS streaming_providers
+    FROM unified u
+    LEFT JOIN genre_names gn
+        ON  gn.id         = u.id
+        AND gn.media_type = u.media_type
+    LEFT JOIN {db_movie}.tb_configuration_languages_tmdb lang
+        ON lang.iso_639_1 = u.original_language
+    LEFT JOIN {db_tv}.tb_configuration_countries_tmdb ctry
+        ON ctry.iso_3166_1 = element_at(u.origin_country, 1)
+    LEFT JOIN movie_details md
+        ON  md.id = u.id AND u.media_type = 'movie'
+    LEFT JOIN tv_details tv
+        ON  tv.id = u.id AND u.media_type = 'tv'
+    LEFT JOIN movie_providers mp
+        ON  mp.id = u.id AND u.media_type = 'movie'
+    LEFT JOIN tv_providers tp
+        ON  tp.id = u.id AND u.media_type = 'tv'
+),
+
+-- Deduplicação final: garante um único registro por (id, media_type) na saída SPEC,
+-- mesmo que restem duplicatas cross-year após os ROW_NUMBER anteriores.
+spec_deduped AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY id, media_type
+               ORDER BY year DESC, popularity DESC
+           ) AS rn_final
+    FROM spec_raw
+)
+
+SELECT * EXCEPT (rn_final)
+FROM spec_deduped
+WHERE rn_final = 1
 """
 
 
@@ -324,6 +360,7 @@ def get_parameters_glue() -> Dict[str, Any]:
         "DB_TV",
         "DB_UNIFIED",
         "TABLE_NAME",
+        "GLUE_DATA_QUALITY_JOB_NAME",
     ]
     return get_resolved_option(required_args)
 
@@ -398,9 +435,45 @@ def write_parquet_to_spec(
         path=s3_path,
         dataset=True,
         partition_cols=["media_type", "year"],
-        mode="overwrite_partitions",
+        mode="overwrite",
         database=database,
         table=table_name,
     )
     logger.info(f"Tabela '{table_name}' gravada com sucesso no SPEC.")
-    
+
+
+def trigger_data_quality(
+    dq_job_name: str,
+    table_name: str,
+    database: str,
+    year: Optional[str] = None,
+) -> str:
+    """
+    Dispara o job Glue Data Quality sem aguardar.
+
+    Args:
+        dq_job_name: Nome do job Glue Data Quality cadastrado na AWS.
+        table_name:  Nome da tabela a validar.
+        database:    Nome do banco de dados no Glue Catalog.
+        year:        Ano da partição. None avalia a tabela toda.
+
+    Returns:
+        JobRunId da execução.
+    """
+    arguments = {
+        "--TABLE_NAME": table_name,
+        "--DATABASE": database,
+    }
+    if year is not None:
+        arguments["--YEAR"] = year
+
+    glue_client = boto3.client("glue")
+    response = glue_client.start_job_run(
+        JobName=dq_job_name,
+        Arguments=arguments,
+    )
+    run_id = response["JobRunId"]
+    logger.info(
+        f"Job Data Quality '{dq_job_name}' iniciado para tabela '{table_name}'. RunId: {run_id}"
+    )
+    return run_id

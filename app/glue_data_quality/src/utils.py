@@ -178,6 +178,7 @@ def evaluate_data_quality(
         "category",
         when(col("rule").startswith("IsComplete"), "Completude")
         .when(col("rule").startswith("IsUnique"), "Unicidade")
+        .when(col("rule").startswith("Uniqueness"), "Unicidade")
         .when(col("rule").startswith("ColumnValues"), "Validade")
         .when(col("rule").startswith("RowCount"), "Integridade"),
     )

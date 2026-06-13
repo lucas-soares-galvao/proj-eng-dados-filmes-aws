@@ -34,6 +34,9 @@ def _base_patches(args=None, existing_ids=None, stale_ids=None):
         patch.object(m, "collect_and_write_details"),
         patch.object(m, "collect_and_write_watch_providers"),
         patch.object(m, "trigger_data_quality"),
+        patch.object(m, "repair_discover_duplicates"),
+        patch.object(m, "repair_watch_providers_duplicates"),
+        patch.object(m, "repair_details_duplicates"),
         patch.object(m, "trigger_agg"),
     )
 
@@ -214,10 +217,81 @@ class TestMain:
             patch.object(m, "collect_and_write_details"),
             patch.object(m, "collect_and_write_watch_providers"),
             patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_details_duplicates"),
             patch.object(m, "trigger_agg") as mock_agg,
         ):
             m.main()
             mock_agg.assert_called_once_with(agg_job_name="agg-job")
+
+    def test_repair_called_before_agg_when_tv_and_last_year(self):
+        args = {**_BASE, "MEDIA_TYPE": "tv", "YEAR": "2025", "END_YEAR": "2025"}
+        call_order = []
+        with (
+            patch.object(m, "get_parameters_glue", return_value=args),
+            patch.object(m, "get_tmdb_api_key", return_value="key-123"),
+            patch.object(m, "fetch_ids_from_sot", return_value=_IDS),
+            patch.object(m, "fetch_existing_ids_from_details", return_value=[]),
+            patch.object(m, "fetch_ids_stale_watch_providers", return_value=_IDS),
+            patch.object(m, "collect_and_write_details"),
+            patch.object(m, "collect_and_write_watch_providers"),
+            patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_discover_duplicates", side_effect=lambda **_: call_order.append("repair_discover")),
+            patch.object(m, "repair_watch_providers_duplicates", side_effect=lambda **_: call_order.append("repair_wp")),
+            patch.object(m, "repair_details_duplicates", side_effect=lambda **_: call_order.append("repair_details")) as mock_repair,
+            patch.object(m, "trigger_agg", side_effect=lambda **_: call_order.append("agg")),
+        ):
+            m.main()
+        mock_repair.assert_called_once_with(
+            database="db_tmdb",
+            table_details="tb_details_tv_tmdb",
+            s3_bucket_sot="my-sot",
+            s3_bucket_temp="my-temp",
+            year="2025",
+        )
+        assert call_order == ["repair_discover", "repair_wp", "repair_details", "agg"]
+
+    def test_repair_called_for_movie_at_last_year(self):
+        with (
+            patch.object(m, "get_parameters_glue", return_value=_BASE),
+            patch.object(m, "get_tmdb_api_key", return_value="key-123"),
+            patch.object(m, "fetch_ids_from_sot", return_value=_IDS),
+            patch.object(m, "fetch_existing_ids_from_details", return_value=[]),
+            patch.object(m, "fetch_ids_stale_watch_providers", return_value=_IDS),
+            patch.object(m, "collect_and_write_details"),
+            patch.object(m, "collect_and_write_watch_providers"),
+            patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_details_duplicates") as mock_repair,
+            patch.object(m, "trigger_agg"),
+        ):
+            m.main()
+            mock_repair.assert_called_once_with(
+                database="db_tmdb",
+                table_details="tb_details_movie_tmdb",
+                s3_bucket_sot="my-sot",
+                s3_bucket_temp="my-temp",
+                year="2025",
+            )
+
+    def test_repair_not_called_when_not_last_year(self):
+        args = {**_BASE, "MEDIA_TYPE": "tv", "YEAR": "2024", "END_YEAR": "2025"}
+        with (
+            patch.object(m, "get_parameters_glue", return_value=args),
+            patch.object(m, "get_tmdb_api_key", return_value="key-123"),
+            patch.object(m, "fetch_ids_from_sot", return_value=_IDS),
+            patch.object(m, "fetch_existing_ids_from_details", return_value=[]),
+            patch.object(m, "fetch_ids_stale_watch_providers", return_value=_IDS),
+            patch.object(m, "collect_and_write_details"),
+            patch.object(m, "collect_and_write_watch_providers"),
+            patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_discover_duplicates") as mock_repair_discover,
+            patch.object(m, "repair_watch_providers_duplicates") as mock_repair_wp,
+            patch.object(m, "repair_details_duplicates") as mock_repair_details,
+            patch.object(m, "trigger_agg"),
+        ):
+            m.main()
+            mock_repair_discover.assert_not_called()
+            mock_repair_wp.assert_not_called()
+            mock_repair_details.assert_not_called()
 
     def test_does_not_trigger_agg_for_movie(self):
         with (
@@ -229,6 +303,7 @@ class TestMain:
             patch.object(m, "collect_and_write_details"),
             patch.object(m, "collect_and_write_watch_providers"),
             patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_details_duplicates"),
             patch.object(m, "trigger_agg") as mock_agg,
         ):
             m.main()
@@ -245,6 +320,7 @@ class TestMain:
             patch.object(m, "collect_and_write_details"),
             patch.object(m, "collect_and_write_watch_providers"),
             patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_details_duplicates"),
             patch.object(m, "trigger_agg") as mock_agg,
         ):
             m.main()
@@ -279,3 +355,49 @@ class TestMain:
         ):
             m.main()
             mock_wp.assert_not_called()
+
+    def test_repair_discover_duplicates_called_at_last_year(self):
+        with (
+            patch.object(m, "get_parameters_glue", return_value=_BASE),
+            patch.object(m, "get_tmdb_api_key", return_value="key-123"),
+            patch.object(m, "fetch_ids_from_sot", return_value=_IDS),
+            patch.object(m, "fetch_existing_ids_from_details", return_value=[]),
+            patch.object(m, "fetch_ids_stale_watch_providers", return_value=_IDS),
+            patch.object(m, "collect_and_write_details"),
+            patch.object(m, "collect_and_write_watch_providers"),
+            patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_discover_duplicates") as mock_repair_discover,
+            patch.object(m, "repair_watch_providers_duplicates"),
+            patch.object(m, "repair_details_duplicates"),
+            patch.object(m, "trigger_agg"),
+        ):
+            m.main()
+            mock_repair_discover.assert_called_once_with(
+                database="db_tmdb",
+                table_discover="tb_discover_movie_tmdb",
+                s3_bucket_sot="my-sot",
+                year="2025",
+            )
+
+    def test_repair_watch_providers_duplicates_called_at_last_year(self):
+        with (
+            patch.object(m, "get_parameters_glue", return_value=_BASE),
+            patch.object(m, "get_tmdb_api_key", return_value="key-123"),
+            patch.object(m, "fetch_ids_from_sot", return_value=_IDS),
+            patch.object(m, "fetch_existing_ids_from_details", return_value=[]),
+            patch.object(m, "fetch_ids_stale_watch_providers", return_value=_IDS),
+            patch.object(m, "collect_and_write_details"),
+            patch.object(m, "collect_and_write_watch_providers"),
+            patch.object(m, "trigger_data_quality"),
+            patch.object(m, "repair_discover_duplicates"),
+            patch.object(m, "repair_watch_providers_duplicates") as mock_repair_wp,
+            patch.object(m, "repair_details_duplicates"),
+            patch.object(m, "trigger_agg"),
+        ):
+            m.main()
+            mock_repair_wp.assert_called_once_with(
+                database="db_tmdb",
+                table_watch_providers="tb_watch_providers_movie_tmdb",
+                s3_bucket_sot="my-sot",
+                year="2025",
+            )

@@ -2,7 +2,9 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.utils import get_parameters_glue, get_resolved_option, run_athena_query, write_parquet_to_spec
+from unittest.mock import MagicMock
+
+from src.utils import get_parameters_glue, get_resolved_option, run_athena_query, trigger_data_quality, write_parquet_to_spec
 
 
 class TestRunAthenaQuery:
@@ -64,6 +66,33 @@ class TestRunAthenaQuery:
             assert "tb_watch_providers_tv_tmdb" in sql
             assert "streaming_providers" in sql
 
+    def test_query_deduplica_watch_providers_por_ano_mais_recente(self):
+        """movie_wp_recent e tv_wp_recent devem usar DENSE_RANK por year DESC.
+        DENSE_RANK (não ROW_NUMBER) garante que TODOS os provedores do ano mais recente
+        recebam rank=1, evitando filtrar apenas um provedor por título."""
+        with patch("awswrangler.athena.read_sql_query", return_value=pd.DataFrame()) as mock_read:
+            run_athena_query(db_movie="db_movie_tmdb", db_tv="db_tv_tmdb", db_unified="db_unified_tmdb", s3_bucket_temp="my-temp")
+            _, kwargs = mock_read.call_args
+            sql = kwargs["sql"]
+
+        assert "movie_wp_recent" in sql
+        assert "tv_wp_recent" in sql
+        assert "CAST(year AS INTEGER) DESC" in sql
+        assert "DENSE_RANK()" in sql
+        assert "ROW_NUMBER() OVER (PARTITION BY id ORDER BY CAST(year AS INTEGER) DESC)" not in sql
+
+    def test_query_possui_dedup_final_spec_deduped(self):
+        """spec_raw e spec_deduped garantem unicidade por (id, media_type) na saída."""
+        with patch("awswrangler.athena.read_sql_query", return_value=pd.DataFrame()) as mock_read:
+            run_athena_query(db_movie="db_movie_tmdb", db_tv="db_tv_tmdb", db_unified="db_unified_tmdb", s3_bucket_temp="my-temp")
+            _, kwargs = mock_read.call_args
+            sql = kwargs["sql"]
+
+        assert "spec_raw" in sql
+        assert "spec_deduped" in sql
+        assert "PARTITION BY id, media_type" in sql
+        assert "rn_final" in sql
+
 
 
 class TestWriteParquetToSpec:
@@ -82,7 +111,7 @@ class TestWriteParquetToSpec:
 
             _, kwargs = mock_write.call_args
             assert kwargs["partition_cols"] == ["media_type", "year"]
-            assert kwargs["mode"] == "overwrite_partitions"
+            assert kwargs["mode"] == "overwrite"
             assert kwargs["dataset"] is True
 
     def test_registra_tabela_no_catalog(self):
@@ -112,6 +141,7 @@ class TestGetParametersGlue:
             "DB_TV": "db_tv",
             "DB_UNIFIED": "db_unified",
             "TABLE_NAME": "tb_unified",
+            "GLUE_DATA_QUALITY_JOB_NAME": "dq-job",
         }
 
     def test_returns_all_required_args(self):
@@ -120,3 +150,36 @@ class TestGetParametersGlue:
         assert result["S3_BUCKET_SPEC"] == "spec"
         assert result["DB_UNIFIED"] == "db_unified"
         assert result["TABLE_NAME"] == "tb_unified"
+        assert result["GLUE_DATA_QUALITY_JOB_NAME"] == "dq-job"
+
+
+class TestTriggerDataQuality:
+    def test_inicia_job_sem_year(self):
+        mock_client = MagicMock()
+        mock_client.start_job_run.return_value = {"JobRunId": "run-abc"}
+        with patch("src.utils.boto3.client", return_value=mock_client):
+            run_id = trigger_data_quality(
+                dq_job_name="dq-job",
+                table_name="tb_content",
+                database="db_unified",
+            )
+        assert run_id == "run-abc"
+        call_args = mock_client.start_job_run.call_args
+        arguments = call_args.kwargs["Arguments"]
+        assert arguments["--TABLE_NAME"] == "tb_content"
+        assert arguments["--DATABASE"] == "db_unified"
+        assert "--YEAR" not in arguments
+
+    def test_inicia_job_com_year(self):
+        mock_client = MagicMock()
+        mock_client.start_job_run.return_value = {"JobRunId": "run-xyz"}
+        with patch("src.utils.boto3.client", return_value=mock_client):
+            run_id = trigger_data_quality(
+                dq_job_name="dq-job",
+                table_name="tb_content",
+                database="db_unified",
+                year="2025",
+            )
+        assert run_id == "run-xyz"
+        arguments = mock_client.start_job_run.call_args.kwargs["Arguments"]
+        assert arguments["--YEAR"] == "2025"

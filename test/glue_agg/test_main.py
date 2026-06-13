@@ -11,6 +11,7 @@ _BASE_ARGS = {
     "DB_TV":      "db_tv_tmdb",
     "DB_UNIFIED": "db_unified_tmdb",
     "TABLE_NAME": "tb_discover_unified_tmdb",
+    "GLUE_DATA_QUALITY_JOB_NAME": "dq-job",
 }
 
 _DF_MOCK = pd.DataFrame(
@@ -27,6 +28,7 @@ class TestMain:
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=_DF_MOCK) as mock_query,
             patch.object(m, "write_parquet_to_spec"),
+            patch.object(m, "trigger_data_quality"),
         ):
             m.main()
             mock_query.assert_called_once_with(
@@ -41,6 +43,7 @@ class TestMain:
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=_DF_MOCK),
             patch.object(m, "write_parquet_to_spec") as mock_write,
+            patch.object(m, "trigger_data_quality"),
         ):
             m.main()
             mock_write.assert_called_once_with(
@@ -56,6 +59,7 @@ class TestMain:
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=df_custom),
             patch.object(m, "write_parquet_to_spec") as mock_write,
+            patch.object(m, "trigger_data_quality"),
         ):
             m.main()
             actual_df = mock_write.call_args.kwargs["df"]
@@ -66,14 +70,16 @@ class TestMain:
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=_DF_MOCK),
             patch.object(m, "write_parquet_to_spec"),
+            patch.object(m, "trigger_data_quality"),
         ):
-            m.main()  # deve concluir sem levantar excecao
+            m.main()
 
     def test_write_called_exactly_once(self):
         with (
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=_DF_MOCK),
             patch.object(m, "write_parquet_to_spec") as mock_write,
+            patch.object(m, "trigger_data_quality"),
         ):
             m.main()
             assert mock_write.call_count == 1
@@ -83,7 +89,24 @@ class TestMain:
             patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
             patch.object(m, "run_athena_query", return_value=_DF_MOCK) as mock_query,
             patch.object(m, "write_parquet_to_spec"),
+            patch.object(m, "trigger_data_quality"),
         ):
             m.main()
             assert mock_query.call_count == 1
+
+    def test_aciona_dq_apos_escrita_sem_year(self):
+        call_order = []
+        with (
+            patch.object(m, "get_parameters_glue", return_value=_BASE_ARGS),
+            patch.object(m, "run_athena_query", return_value=_DF_MOCK),
+            patch.object(m, "write_parquet_to_spec", side_effect=lambda **_: call_order.append("write")),
+            patch.object(m, "trigger_data_quality", side_effect=lambda **_: call_order.append("dq")) as mock_dq,
+        ):
+            m.main()
+        mock_dq.assert_called_once_with(
+            dq_job_name="dq-job",
+            table_name="tb_discover_unified_tmdb",
+            database="db_unified_tmdb",
+        )
+        assert call_order == ["write", "dq"]
 

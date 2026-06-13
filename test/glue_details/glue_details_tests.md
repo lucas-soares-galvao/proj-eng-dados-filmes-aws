@@ -41,11 +41,16 @@ test/glue_details/
 | `test_skip_collect_details_when_no_new_ids` | `collect_and_write_details` **não** é chamado quando todos os IDs já existem no mês atual |
 | `test_skip_collect_watch_providers_when_no_stale_ids` | `collect_and_write_watch_providers` **não** é chamado quando não há IDs stale |
 
-### Acionamento condicional do Glue AGG
+### Acionamento condicional do repair e do Glue AGG
 
 | Teste | O que verifica |
 |---|---|
 | `test_triggers_agg_when_tv_and_last_year` | AGG é acionado quando `media_type="tv"` e `year == end_year` |
+| `test_repair_called_before_agg_when_tv_and_last_year` | Os três repairs são chamados na ordem `discover → watch_providers → details → agg` quando tv+end_year |
+| `test_repair_called_for_movie_at_last_year` | `repair_details_duplicates` é chamado para `media_type="movie"` quando `year == end_year` |
+| `test_repair_not_called_when_not_last_year` | Nenhum dos três repairs é chamado quando `year != end_year` |
+| `test_repair_discover_duplicates_called_at_last_year` | `repair_discover_duplicates` é chamado com os argumentos corretos quando `year == end_year` |
+| `test_repair_watch_providers_duplicates_called_at_last_year` | `repair_watch_providers_duplicates` é chamado com os argumentos corretos quando `year == end_year` |
 | `test_does_not_trigger_agg_for_movie` | AGG **não** é acionado para `media_type="movie"` |
 | `test_does_not_trigger_agg_for_tv_non_last_year` | AGG **não** é acionado para séries quando `year != end_year` |
 
@@ -55,9 +60,12 @@ Testa as funções individuais:
 
 - `_tmdb_get`: retry com backoff exponencial em caso de erro HTTP (429, 500), sucesso após N tentativas
 - `fetch_ids_from_sot`: query Athena monta SQL correto com filtro de ano
-- `fetch_existing_ids_from_details`: SQL filtra pelo ano e por `date_trunc('month', current_date)`; retorna `[]` em caso de erro (tabela inexistente na primeira execução)
+- `fetch_existing_ids_from_details`: SQL **não** contém filtro de `year` — detecta IDs processados em qualquer partição no mês atual; retorna `[]` em caso de erro (tabela inexistente na primeira execução)
 - `fetch_ids_stale_watch_providers`: SQL usa LEFT JOIN e condição mensal; retorna `[]` em caso de erro
-- `collect_and_write_details`: chamadas paralelas retornam o DataFrame esperado, IDs inválidos são ignorados; merge com dados existentes preserva IDs fora do batch e substitui IDs re-escritos; usa `mode="overwrite_partitions"`; falha no `read_parquet` grava apenas novos registros sem erro
+- `collect_and_write_details`: chamadas paralelas retornam o DataFrame esperado, IDs inválidos são ignorados; merge com dados existentes preserva IDs fora do batch e substitui IDs re-escritos; `drop_duplicates` garante unicidade no DataFrame antes da escrita; usa `mode="overwrite_partitions"`; falha no `read_parquet` grava apenas novos registros sem erro
+- `repair_details_duplicates` (`TestRepairDetailsDuplicates`): sem duplicatas → não reescreve; S3 inacessível → não propaga exceção; partição vazia → não reescreve; com duplicatas → mantém `dt_processamento` mais recente por ID; usa `overwrite_partitions`
+- `repair_discover_duplicates` (`TestRepairDiscoverDuplicates`): sem duplicatas → não reescreve; S3 inacessível → não propaga exceção; com duplicatas → mantém registro de maior `popularity`; usa `overwrite_partitions`
+- `repair_watch_providers_duplicates` (`TestRepairWatchProvidersDuplicates`): sem duplicatas → não reescreve; S3 inacessível → não propaga exceção; com duplicatas → deduplicação pela chave `(id, provider_type, provider_id)`, mantendo `dt_atualizacao` mais recente; rebranding de provider (mesmo `provider_id`, nomes distintos) é tratado como duplicata; usa `overwrite_partitions`
 - `collect_and_write_watch_providers`: apenas provedores do Brasil (`BR`) são extraídos
 - `trigger_agg`: argumentos passados ao `start_job_run` do Glue estão corretos
 
