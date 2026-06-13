@@ -10,23 +10,25 @@ Os dados de filmes e séries chegam em tabelas separadas (discover, details, gen
 
 ## Como funciona
 
-1. Lê os argumentos do job (nomes dos databases, buckets, tabela de destino)
+1. Lê os argumentos do job (nomes dos databases, buckets, tabela de destino, nome do job de Data Quality)
 2. Executa uma query SQL complexa no **Athena** que:
    - Une filmes e séries via `UNION ALL`
-   - Deduplica por ID (mantém o mais recente e mais popular em caso de conflito)
+   - Deduplica watch providers por `DENSE_RANK` sobre o ano mais recente (CTEs `movie_wp_recent` / `tv_wp_recent`), preservando todos os provedores do ano mais recente por ID
    - Faz `LEFT JOIN` com gêneros, idiomas, países, detalhes (runtime/temporadas) e plataformas de streaming
+   - Aplica deduplicação final via `spec_deduped` — garante um único registro por `(id, media_type)` na saída mesmo que restem duplicatas cross-year
 3. Traduz as colunas `title` e `overview` do inglês para o português para registros cujo idioma original é inglês — em paralelo via `ThreadPoolExecutor` usando a API do Google Translate
-4. Grava o DataFrame final como Parquet particionado por `media_type` na camada SPEC
+4. Grava o DataFrame final como Parquet com `mode="overwrite"` particionado por `(media_type, year)` na camada SPEC
 5. O AWS Wrangler registra automaticamente a tabela no Glue Catalog (`db_unified_tmdb`)
+6. Aciona o Glue Data Quality para validar a tabela unificada completa (sem filtro de ano)
 
 ## Entradas e saídas
 
 | | Descrição |
 |---|---|
-| **Entrada** | Argumentos: `DB_MOVIE`, `DB_TV`, `DB_UNIFIED`, `S3_BUCKET_SPEC`, `S3_BUCKET_TEMP`, `TABLE_NAME` |
+| **Entrada** | Argumentos: `DB_MOVIE`, `DB_TV`, `DB_UNIFIED`, `S3_BUCKET_SPEC`, `S3_BUCKET_TEMP`, `TABLE_NAME`, `GLUE_DATA_QUALITY_JOB_NAME` |
 | **Leitura** | Athena — tabelas da SOT: `tb_discover_*`, `tb_details_*`, `tb_genre_*`, `tb_configuration_*`, `tb_watch_providers_*` |
 | **Escrita** | S3 SPEC — `tb_discover_unified_tmdb` particionada por `media_type` + Glue Catalog |
-| **Aciona** | Nada (último job do pipeline de dados) |
+| **Aciona** | Glue Data Quality (tabela unificada completa, sem partição de ano) |
 
 ## SQL de unificação (resumo)
 
@@ -56,10 +58,11 @@ LEFT JOIN tb_watch_providers_* wp ON ...
 
 | Função | Responsabilidade |
 |---|---|
-| `get_parameters_glue()` | Lê e valida os argumentos de execução do job |
-| `run_athena_query(db_movie, db_tv, db_unified, s3_bucket_temp)` | Executa o SQL de unificação e retorna um DataFrame |
+| `get_parameters_glue()` | Lê e valida os argumentos de execução do job (inclui `GLUE_DATA_QUALITY_JOB_NAME`) |
+| `run_athena_query(db_movie, db_tv, db_unified, s3_bucket_temp)` | Executa o SQL de unificação (com dedup de watch providers por `DENSE_RANK` e dedup final por `spec_deduped`) e retorna um DataFrame |
 | `traduzir_colunas_en(df)` | Traduz `title` e `overview` inglês→português em paralelo |
-| `write_parquet_to_spec(df, s3_bucket_spec, table_name, database)` | Grava Parquet particionado na SPEC e registra no Glue Catalog |
+| `write_parquet_to_spec(df, s3_bucket_spec, table_name, database)` | Grava Parquet com `mode="overwrite"` particionado por `(media_type, year)` na SPEC e registra no Glue Catalog |
+| `trigger_data_quality(dq_job_name, table_name, database, year=None)` | Aciona o job de Data Quality; quando `year=None`, avalia a tabela inteira |
 
 ## Tecnologias
 

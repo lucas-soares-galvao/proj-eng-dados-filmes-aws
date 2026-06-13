@@ -35,6 +35,7 @@ test/glue_agg/
 | `test_query_called_exactly_once` | `run_athena_query` é chamado exatamente uma vez |
 | `test_translation_called_between_query_and_write` | **Ordem garantida:** `run_athena_query` → `traduzir_colunas_en` → `write_parquet_to_spec` (usando `call_order[]`) |
 | `test_translation_called_exactly_once` | `traduzir_colunas_en` é chamado exatamente uma vez |
+| `test_aciona_dq_apos_escrita_sem_year` | `trigger_data_quality` é chamado **após** `write_parquet_to_spec`, sem `year`, com `table_name` e `database` corretos |
 
 > **Destaque:** `test_translation_called_between_query_and_write` usa uma lista compartilhada `call_order` nos side_effects dos três mocks para verificar a ordem de execução — garante que títulos sejam traduzidos *antes* de serem gravados na SPEC.
 
@@ -42,9 +43,11 @@ test/glue_agg/
 
 Testa as funções individuais:
 
-- `run_athena_query`: query SQL montada corretamente com os databases passados; DataFrame retornado com as colunas esperadas
+- `run_athena_query`: query SQL montada corretamente com os databases passados; DataFrame retornado com as colunas esperadas; SQL contém CTEs `movie_wp_recent` / `tv_wp_recent` com `DENSE_RANK() OVER (...ORDER BY CAST(year AS INTEGER) DESC)` para dedup de watch providers; SQL contém `spec_raw`, `spec_deduped` e `PARTITION BY id, media_type` para dedup final
 - `traduzir_colunas_en`: apenas registros com `original_language="en"` são traduzidos; registros em outros idiomas permanecem inalterados; falhas na tradução não quebram o job
-- `write_parquet_to_spec`: chamada ao `awswrangler.s3.to_parquet` com os parâmetros de particionamento corretos
+- `write_parquet_to_spec`: chamada ao `awswrangler.s3.to_parquet` com `mode="overwrite"` e `partition_cols=["media_type", "year"]`
+- `trigger_data_quality` (`TestTriggerDataQuality`): sem `year` → argumento `--YEAR` ausente no `start_job_run`; com `year` → argumento `--YEAR` presente; retorna `JobRunId` correto
+- `get_parameters_glue`: inclui `GLUE_DATA_QUALITY_JOB_NAME` nos argumentos requeridos
 
 ## Como executar
 

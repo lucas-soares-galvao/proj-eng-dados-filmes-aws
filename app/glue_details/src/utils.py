@@ -185,33 +185,33 @@ def fetch_existing_ids_from_details(
     database: str,
     table_details: str,
     s3_bucket_temp: str,
-    year: str,
 ) -> List[int]:
     """
-    Retorna IDs já presentes na tabela de detalhes para o ano informado.
+    Retorna IDs já presentes na tabela de detalhes em qualquer partição year.
 
     Usado para calcular o delta: apenas IDs ausentes precisam ser buscados na API.
+    Um ID processado em QUALQUER partição year neste mês é considerado existente —
+    evita re-buscar IDs cujo release_date pertence a um year diferente do discover year,
+    o que causaria escritas concorrentes na mesma partição S3.
     Retorna lista vazia se a tabela não existir ainda (primeira execução).
 
     Args:
         database:       Nome do banco de dados no Glue Catalog.
         table_details:  Nome da tabela de detalhes (movie ou tv).
         s3_bucket_temp: Bucket S3 para resultados temporários do Athena.
-        year:           Ano a verificar.
 
     Returns:
-        Lista de IDs inteiros já processados.
+        Lista de IDs inteiros já processados este mês (qualquer partição year).
     """
     s3_output = f"s3://{s3_bucket_temp}/athena/glue_details/"
-    # Só considera "existente" quem foi processado no mês atual.
-    # IDs de meses anteriores (ou sem data) são stale e voltam para re-fetch no dia 1.
+    # Considera "existente" qualquer ID processado este mês, independente da partição year.
+    # IDs de meses anteriores são stale e voltam para re-fetch no dia 1.
     query = (
         f"SELECT DISTINCT id FROM {database}.{table_details} "
-        f"WHERE year = '{year}' "
-        f"AND dt_processamento >= date_trunc('month', current_date)"
+        f"WHERE dt_processamento >= date_trunc('month', current_date)"
     )
 
-    logger.info(f"Verificando IDs já processados em '{table_details}' para year={year}...")
+    logger.info(f"Verificando IDs já processados em '{table_details}' (mês atual, todas as partições year)...")
     try:
         df = wr.athena.read_sql_query(
             sql=query,
@@ -220,7 +220,7 @@ def fetch_existing_ids_from_details(
             ctas_approach=False,
         )
         ids = df["id"].astype(int).tolist()
-        logger.info(f"IDs já em details (mês atual): {len(ids)}.")
+        logger.info(f"IDs já em details (mês atual, todas as partições): {len(ids)}.")
         return ids
     except Exception as exc:
         logger.warning(
@@ -445,7 +445,7 @@ def collect_and_write_details(
             df_read = wr.s3.read_parquet(
                 path=s3_path,
                 dataset=True,
-                partition_filter=lambda x: x["year"] == str(yr),
+                partition_filter=lambda x, _yr=yr: x["year"] == str(_yr),
             )
             if not df_read.empty:
                 df_existing = pd.concat(
@@ -458,6 +458,10 @@ def collect_and_write_details(
 
     if not df_existing.empty:
         df = pd.concat([df_existing, df], ignore_index=True)
+
+    # Garante unicidade de IDs no DataFrame final.
+    # keep="last" preserva o registro novo (concat coloca novos por último) sobre o existente stale.
+    df = df.drop_duplicates(subset=["id"], keep="last")
 
     logger.info(
         f"Gravando {len(df)} registros de detalhes em {s3_path} | "
@@ -473,6 +477,204 @@ def collect_and_write_details(
         table=table_name,
     )
     logger.info(f"Tabela '{table_name}' gravada com sucesso no SOT.")
+
+
+def repair_details_duplicates(
+    database: str,
+    table_details: str,
+    s3_bucket_sot: str,
+    s3_bucket_temp: str,
+    year: str,
+) -> None:
+    """
+    Remove IDs duplicados da partição year atual da tabela de detalhes.
+
+    Lê diretamente a partição do ano corrente, aplica drop_duplicates pelo id mais recente
+    (dt_processamento DESC) e grava de volta apenas se houver mudanças.
+    Deve ser chamado no final do ciclo (year == end_year) para cada media_type.
+
+    Args:
+        database:       Nome do banco de dados no Glue Catalog.
+        table_details:  Nome da tabela de detalhes (movie ou tv).
+        s3_bucket_sot:  Nome do bucket SOT onde os dados estão gravados.
+        s3_bucket_temp: Bucket S3 para resultados temporários do Athena (não usado; mantido por compatibilidade).
+        year:           Ano da partição a reparar.
+    """
+    s3_path = f"s3://{s3_bucket_sot}/tmdb/{table_details}/"
+
+    logger.info(f"Verificando duplicatas na partição year={year} de '{table_details}'...")
+    try:
+        df_yr = wr.s3.read_parquet(
+            path=s3_path,
+            dataset=True,
+            partition_filter=lambda x: x["year"] == str(year),
+        )
+    except Exception as exc:
+        logger.warning(f"Não foi possível ler '{table_details}' year={year}: {exc}")
+        return
+
+    if df_yr.empty:
+        logger.info(f"Partição year={year} de '{table_details}' vazia. Nada a reparar.")
+        return
+
+    before = len(df_yr)
+    df_deduped = (
+        df_yr
+        .sort_values("dt_processamento", ascending=True)
+        .drop_duplicates(subset=["id"], keep="last")
+        .reset_index(drop=True)
+    )
+    after = len(df_deduped)
+
+    if before == after:
+        logger.info(f"Nenhuma duplicata em '{table_details}' year={year}. Nada a reparar.")
+        return
+
+    logger.info(
+        f"Partição year={year} em '{table_details}': "
+        f"{before - after} duplicatas removidas ({before} → {after} registros). Regravando..."
+    )
+    wr.s3.to_parquet(
+        df=df_deduped,
+        path=s3_path,
+        dataset=True,
+        partition_cols=["year"],
+        mode="overwrite_partitions",
+        database=database,
+        table=table_details,
+    )
+    logger.info(f"Partição year={year} de '{table_details}' reparada com sucesso.")
+
+
+def repair_discover_duplicates(
+    database: str,
+    table_discover: str,
+    s3_bucket_sot: str,
+    year: str,
+) -> None:
+    """
+    Remove IDs duplicados da partição year atual da tabela de discover.
+
+    Lê diretamente a partição do ano corrente, aplica drop_duplicates pelo id
+    e grava de volta apenas se houver mudanças.
+    Deve ser chamado no final do ciclo (year == end_year) para cada media_type.
+
+    Args:
+        database:        Nome do banco de dados no Glue Catalog.
+        table_discover:  Nome da tabela de discover (movie ou tv).
+        s3_bucket_sot:   Nome do bucket SOT onde os dados estão gravados.
+        year:            Ano da partição a reparar.
+    """
+    s3_path = f"s3://{s3_bucket_sot}/tmdb/{table_discover}/"
+
+    logger.info(f"Verificando duplicatas na partição year={year} de '{table_discover}'...")
+    try:
+        df_yr = wr.s3.read_parquet(
+            path=s3_path,
+            dataset=True,
+            partition_filter=lambda x: x["year"] == str(year),
+        )
+    except Exception as exc:
+        logger.warning(f"Não foi possível ler '{table_discover}' year={year}: {exc}")
+        return
+
+    if df_yr.empty:
+        logger.info(f"Partição year={year} de '{table_discover}' vazia. Nada a reparar.")
+        return
+
+    before = len(df_yr)
+    df_deduped = (
+        df_yr
+        .sort_values("popularity", ascending=True)
+        .drop_duplicates(subset=["id"], keep="last")
+        .reset_index(drop=True)
+    )
+    after = len(df_deduped)
+
+    if before == after:
+        logger.info(f"Nenhuma duplicata em '{table_discover}' year={year}. Nada a reparar.")
+        return
+
+    logger.info(
+        f"Partição year={year} em '{table_discover}': "
+        f"{before - after} duplicatas removidas ({before} → {after} registros). Regravando..."
+    )
+    wr.s3.to_parquet(
+        df=df_deduped,
+        path=s3_path,
+        dataset=True,
+        partition_cols=["year"],
+        mode="overwrite_partitions",
+        database=database,
+        table=table_discover,
+    )
+    logger.info(f"Partição year={year} de '{table_discover}' reparada com sucesso.")
+
+
+def repair_watch_providers_duplicates(
+    database: str,
+    table_watch_providers: str,
+    s3_bucket_sot: str,
+    year: str,
+) -> None:
+    """
+    Remove linhas duplicadas da partição year atual da tabela de watch providers.
+
+    Duplicatas são definidas pela chave (id, provider_type, provider_id) — provider_id
+    é o identificador canônico estável do TMDB e não muda com rebranding de provedores.
+    Mantém o registro com dt_atualizacao mais recente.
+    Deve ser chamado no final do ciclo (year == end_year) para cada media_type.
+
+    Args:
+        database:              Nome do banco de dados no Glue Catalog.
+        table_watch_providers: Nome da tabela de watch providers (movie ou tv).
+        s3_bucket_sot:         Nome do bucket SOT onde os dados estão gravados.
+        year:                  Ano da partição a reparar.
+    """
+    s3_path = f"s3://{s3_bucket_sot}/tmdb/{table_watch_providers}/"
+
+    logger.info(f"Verificando duplicatas na partição year={year} de '{table_watch_providers}'...")
+    try:
+        df_yr = wr.s3.read_parquet(
+            path=s3_path,
+            dataset=True,
+            partition_filter=lambda x: x["year"] == str(year),
+        )
+    except Exception as exc:
+        logger.warning(f"Não foi possível ler '{table_watch_providers}' year={year}: {exc}")
+        return
+
+    if df_yr.empty:
+        logger.info(f"Partição year={year} de '{table_watch_providers}' vazia. Nada a reparar.")
+        return
+
+    before = len(df_yr)
+    df_deduped = (
+        df_yr
+        .sort_values("dt_atualizacao", ascending=True)
+        .drop_duplicates(subset=["id", "provider_type", "provider_id"], keep="last")
+        .reset_index(drop=True)
+    )
+    after = len(df_deduped)
+
+    if before == after:
+        logger.info(f"Nenhuma duplicata em '{table_watch_providers}' year={year}. Nada a reparar.")
+        return
+
+    logger.info(
+        f"Partição year={year} em '{table_watch_providers}': "
+        f"{before - after} duplicatas removidas ({before} → {after} registros). Regravando..."
+    )
+    wr.s3.to_parquet(
+        df=df_deduped,
+        path=s3_path,
+        dataset=True,
+        partition_cols=["year"],
+        mode="overwrite_partitions",
+        database=database,
+        table=table_watch_providers,
+    )
+    logger.info(f"Partição year={year} de '{table_watch_providers}' reparada com sucesso.")
 
 
 def fetch_tmdb_watch_providers(api_key: str, content_type: str, item_id: int) -> dict:

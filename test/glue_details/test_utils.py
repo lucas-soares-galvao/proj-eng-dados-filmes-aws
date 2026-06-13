@@ -580,14 +580,13 @@ class TestGetTmdbApiKey:
 
 
 class TestFetchExistingIdsFromDetails:
-    def _run(self, year="2025", ids=None, table="tb_details_movie_tmdb", raise_exc=False):
+    def _run(self, ids=None, table="tb_details_movie_tmdb", raise_exc=False):
         if raise_exc:
             with patch("src.utils.wr.athena.read_sql_query", side_effect=Exception("err")):
                 return u.fetch_existing_ids_from_details(
                     database="db_tmdb",
                     table_details=table,
                     s3_bucket_temp="my-temp",
-                    year=year,
                 ), None
         df = pd.DataFrame({"id": ids if ids is not None else [1, 2]})
         with patch("src.utils.wr.athena.read_sql_query", return_value=df) as mock_athena:
@@ -595,14 +594,14 @@ class TestFetchExistingIdsFromDetails:
                 database="db_tmdb",
                 table_details=table,
                 s3_bucket_temp="my-temp",
-                year=year,
             )
         return result, mock_athena
 
-    def test_sql_filtra_pelo_ano(self):
-        _, mock_athena = self._run(year="2025")
+    def test_sql_nao_filtra_por_ano(self):
+        """O filtro de year foi removido: IDs existentes em QUALQUER partição são considerados."""
+        _, mock_athena = self._run()
         sql = mock_athena.call_args.kwargs["sql"]
-        assert "WHERE year = '2025'" in sql
+        assert "WHERE year" not in sql
 
     def test_sql_filtra_mes_atual(self):
         _, mock_athena = self._run()
@@ -616,6 +615,214 @@ class TestFetchExistingIdsFromDetails:
     def test_retorna_lista_vazia_em_erro(self):
         result, _ = self._run(raise_exc=True)
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# repair_details_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestRepairDetailsDuplicates:
+    def _run_repair(self, parquet_df=None, s3_exc=None):
+        """Helper: executa repair_details_duplicates com mocks configuráveis."""
+        if s3_exc:
+            with patch("src.utils.wr.s3.read_parquet", side_effect=s3_exc):
+                u.repair_details_duplicates(
+                    "db_tmdb", "tb_details_movie_tmdb", "sot", "tmp", year="2025"
+                )
+            return None
+
+        with (
+            patch("src.utils.wr.s3.read_parquet", return_value=parquet_df if parquet_df is not None else pd.DataFrame()),
+            patch("src.utils.wr.s3.to_parquet") as mock_write,
+        ):
+            u.repair_details_duplicates(
+                "db_tmdb", "tb_details_movie_tmdb", "sot", "tmp", year="2025"
+            )
+        return mock_write
+
+    def test_nao_reescreve_quando_sem_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "runtime": 100, "year": "2025", "dt_processamento": "2025-06-01"},
+            {"id": 2, "runtime": 90,  "year": "2025", "dt_processamento": "2025-06-01"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_not_called()
+
+    def test_nao_faz_nada_quando_s3_falha(self):
+        self._run_repair(s3_exc=Exception("S3 err"))
+
+    def test_nao_reescreve_quando_particao_vazia(self):
+        mock_write = self._run_repair(parquet_df=pd.DataFrame())
+        mock_write.assert_not_called()
+
+    def test_reescreve_quando_ha_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "runtime": 100, "year": "2025", "dt_processamento": "2025-06-01"},
+            {"id": 1, "runtime": 100, "year": "2025", "dt_processamento": "2025-06-02"},
+            {"id": 2, "runtime": 90,  "year": "2025", "dt_processamento": "2025-06-01"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_called_once()
+        df_written = mock_write.call_args.kwargs["df"]
+        assert len(df_written) == 2
+        assert df_written[df_written["id"] == 1].iloc[0]["dt_processamento"] == "2025-06-02"
+
+    def test_usa_overwrite_partitions(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "runtime": 100, "year": "2025", "dt_processamento": "2025-06-01"},
+            {"id": 1, "runtime": 100, "year": "2025", "dt_processamento": "2025-06-02"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        assert mock_write.call_args.kwargs["mode"] == "overwrite_partitions"
+        assert mock_write.call_args.kwargs["partition_cols"] == ["year"]
+
+
+# ---------------------------------------------------------------------------
+# repair_discover_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestRepairDiscoverDuplicates:
+    def _run_repair(self, parquet_df=None, s3_exc=None):
+        """Helper: executa repair_discover_duplicates com mocks configuráveis."""
+        if s3_exc:
+            with patch("src.utils.wr.s3.read_parquet", side_effect=s3_exc):
+                u.repair_discover_duplicates(
+                    "db_tmdb", "tb_discover_movie_tmdb", "sot", year="2025"
+                )
+            return None
+
+        with (
+            patch("src.utils.wr.s3.read_parquet", return_value=parquet_df if parquet_df is not None else pd.DataFrame()),
+            patch("src.utils.wr.s3.to_parquet") as mock_write,
+        ):
+            u.repair_discover_duplicates(
+                "db_tmdb", "tb_discover_movie_tmdb", "sot", year="2025"
+            )
+        return mock_write
+
+    def test_nao_reescreve_quando_sem_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "title": "Film A", "popularity": 10.0, "year": "2025"},
+            {"id": 2, "title": "Film B", "popularity": 5.0,  "year": "2025"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_not_called()
+
+    def test_nao_faz_nada_quando_s3_falha(self):
+        self._run_repair(s3_exc=Exception("S3 err"))
+
+    def test_nao_reescreve_quando_particao_vazia(self):
+        mock_write = self._run_repair(parquet_df=pd.DataFrame())
+        mock_write.assert_not_called()
+
+    def test_reescreve_quando_ha_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "title": "Film A", "popularity": 10.0, "year": "2025"},
+            {"id": 1, "title": "Film A", "popularity": 10.0, "year": "2025"},
+            {"id": 2, "title": "Film B", "popularity": 5.0,  "year": "2025"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_called_once()
+        df_written = mock_write.call_args.kwargs["df"]
+        assert len(df_written) == 2
+        assert set(df_written["id"].tolist()) == {1, 2}
+
+    def test_mantem_registro_mais_popular_quando_ha_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "title": "Film A", "popularity": 5.0,  "year": "2025"},
+            {"id": 1, "title": "Film A", "popularity": 20.0, "year": "2025"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_called_once()
+        df_written = mock_write.call_args.kwargs["df"]
+        assert len(df_written) == 1
+        assert df_written.iloc[0]["popularity"] == 20.0
+
+    def test_usa_overwrite_partitions(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "title": "Film A", "popularity": 10.0, "year": "2025"},
+            {"id": 1, "title": "Film A", "popularity": 10.0, "year": "2025"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        assert mock_write.call_args.kwargs["mode"] == "overwrite_partitions"
+        assert mock_write.call_args.kwargs["partition_cols"] == ["year"]
+
+
+# ---------------------------------------------------------------------------
+# repair_watch_providers_duplicates
+# ---------------------------------------------------------------------------
+
+
+class TestRepairWatchProvidersDuplicates:
+    def _run_repair(self, parquet_df=None, s3_exc=None):
+        """Helper: executa repair_watch_providers_duplicates com mocks configuráveis."""
+        if s3_exc:
+            with patch("src.utils.wr.s3.read_parquet", side_effect=s3_exc):
+                u.repair_watch_providers_duplicates(
+                    "db_tmdb", "tb_watch_providers_movie_tmdb", "sot", year="2025"
+                )
+            return None
+
+        with (
+            patch("src.utils.wr.s3.read_parquet", return_value=parquet_df if parquet_df is not None else pd.DataFrame()),
+            patch("src.utils.wr.s3.to_parquet") as mock_write,
+        ):
+            u.repair_watch_providers_duplicates(
+                "db_tmdb", "tb_watch_providers_movie_tmdb", "sot", year="2025"
+            )
+        return mock_write
+
+    def test_nao_reescreve_quando_sem_duplicatas(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "provider_type": "flatrate", "provider_id": 8,  "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-01"},
+            {"id": 1, "provider_type": "flatrate", "provider_id": 9,  "provider_name": "Amazon",  "year": "2025", "dt_atualizacao": "2025-06-01"},
+            {"id": 2, "provider_type": "flatrate", "provider_id": 8,  "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-01"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_not_called()
+
+    def test_nao_faz_nada_quando_s3_falha(self):
+        self._run_repair(s3_exc=Exception("S3 err"))
+
+    def test_nao_reescreve_quando_particao_vazia(self):
+        mock_write = self._run_repair(parquet_df=pd.DataFrame())
+        mock_write.assert_not_called()
+
+    def test_reescreve_quando_ha_duplicatas_pela_chave_composta(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "provider_type": "flatrate", "provider_id": 8, "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-01"},
+            {"id": 1, "provider_type": "flatrate", "provider_id": 8, "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-02"},
+            {"id": 1, "provider_type": "flatrate", "provider_id": 9, "provider_name": "Amazon",  "year": "2025", "dt_atualizacao": "2025-06-01"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_called_once()
+        df_written = mock_write.call_args.kwargs["df"]
+        assert len(df_written) == 2
+        netflix_row = df_written[(df_written["id"] == 1) & (df_written["provider_id"] == 8)].iloc[0]
+        assert netflix_row["dt_atualizacao"] == "2025-06-02"
+
+    def test_dedup_usa_provider_id_nao_provider_name(self):
+        """Mesmo provider_id com nomes diferentes (rebranding) é tratado como duplicata."""
+        parquet_df = pd.DataFrame([
+            {"id": 1, "provider_type": "flatrate", "provider_id": 9, "provider_name": "Amazon Prime Video", "year": "2025", "dt_atualizacao": "2025-01-01"},
+            {"id": 1, "provider_type": "flatrate", "provider_id": 9, "provider_name": "Prime Video",        "year": "2025", "dt_atualizacao": "2025-06-01"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        mock_write.assert_called_once()
+        df_written = mock_write.call_args.kwargs["df"]
+        assert len(df_written) == 1
+        assert df_written.iloc[0]["provider_name"] == "Prime Video"
+
+    def test_usa_overwrite_partitions(self):
+        parquet_df = pd.DataFrame([
+            {"id": 1, "provider_type": "flatrate", "provider_id": 8, "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-01"},
+            {"id": 1, "provider_type": "flatrate", "provider_id": 8, "provider_name": "Netflix", "year": "2025", "dt_atualizacao": "2025-06-02"},
+        ])
+        mock_write = self._run_repair(parquet_df=parquet_df)
+        assert mock_write.call_args.kwargs["mode"] == "overwrite_partitions"
+        assert mock_write.call_args.kwargs["partition_cols"] == ["year"]
 
 
 # ---------------------------------------------------------------------------
@@ -675,3 +882,4 @@ class TestFetchIdsStaleWatchProviders:
     def test_retorna_lista_vazia_em_erro(self):
         result, _ = self._run(raise_exc=True)
         assert result == []
+
