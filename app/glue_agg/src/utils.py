@@ -445,7 +445,7 @@ def write_parquet_to_spec(
         f"Escrevendo {len(df)} registros em {s3_path} | "
         f"particoes=[media_type, year] | mode=overwrite"
     )
-    wr.s3.to_parquet(
+    result = wr.s3.to_parquet(
         df=df,
         path=s3_path,
         dataset=True,
@@ -454,7 +454,13 @@ def write_parquet_to_spec(
         database=database,
         table=table_name,
     )
-    logger.info(f"Tabela '{table_name}' gravada com sucesso no SPEC.")
+    written_files = result.get("paths", [])
+    if not written_files:
+        raise RuntimeError(
+            f"Escrita falhou: nenhum arquivo encontrado em '{s3_path}' após gravação. "
+            "Abortando para não acionar o DQ contra dados ausentes."
+        )
+    logger.info(f"Tabela '{table_name}' gravada com sucesso no SPEC. {len(written_files)} arquivo(s) gravado(s).")
 
 
 def trigger_data_quality(
