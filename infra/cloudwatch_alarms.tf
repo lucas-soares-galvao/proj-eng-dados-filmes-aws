@@ -26,7 +26,7 @@ resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_alarm" {
   treat_missing_data  = "notBreaching"
 
   metric_query {
-    id          = "movie_disc_failed"
+    id          = "movie_daily_failed"
     return_data = false
 
     metric {
@@ -35,13 +35,13 @@ resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_alarm" {
       period      = 60
       stat        = "Sum"
       dimensions = {
-        RuleName = aws_cloudwatch_event_rule.lambda_api_movie_discover.name
+        RuleName = aws_cloudwatch_event_rule.lambda_api_movie_daily.name
       }
     }
   }
 
   metric_query {
-    id          = "tv_disc_failed"
+    id          = "tv_daily_failed"
     return_data = false
 
     metric {
@@ -50,7 +50,7 @@ resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_alarm" {
       period      = 60
       stat        = "Sum"
       dimensions = {
-        RuleName = aws_cloudwatch_event_rule.lambda_api_tv_discover.name
+        RuleName = aws_cloudwatch_event_rule.lambda_api_tv_daily.name
       }
     }
   }
@@ -87,7 +87,7 @@ resource "aws_cloudwatch_metric_alarm" "eventbridge_failed_alarm" {
 
   metric_query {
     id          = "total_failed"
-    expression  = "movie_disc_failed+tv_disc_failed+movie_week_failed+tv_week_failed"
+    expression  = "movie_daily_failed+tv_daily_failed+movie_week_failed+tv_week_failed"
     label       = "EventBridgeFailedInvocations"
     return_data = true
   }
