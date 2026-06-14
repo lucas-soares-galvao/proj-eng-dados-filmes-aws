@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 from typing import Any, Dict, Optional
 
 import awswrangler as wr
@@ -463,7 +464,11 @@ def trigger_data_quality(
     year: Optional[str] = None,
 ) -> str:
     """
-    Dispara o job Glue Data Quality sem aguardar.
+    Dispara o job Glue Data Quality e aguarda sua conclusão.
+
+    Aguardar é necessário para garantir que o DQ leia os arquivos S3 escritos
+    por este job antes que um próximo run do EventBridge possa sobrescrevê-los
+    com mode="overwrite" (que apaga todos os arquivos antes de reescrever).
 
     Args:
         dq_job_name: Nome do job Glue Data Quality cadastrado na AWS.
@@ -490,4 +495,15 @@ def trigger_data_quality(
     logger.info(
         f"Job Data Quality '{dq_job_name}' iniciado para tabela '{table_name}'. RunId: {run_id}"
     )
+
+    terminal_states = {"SUCCEEDED", "FAILED", "ERROR", "TIMEOUT", "STOPPED"}
+    while True:
+        state = glue_client.get_job_run(
+            JobName=dq_job_name, RunId=run_id
+        )["JobRun"]["JobRunState"]
+        if state in terminal_states:
+            logger.info(f"Job Data Quality '{dq_job_name}' concluído com status '{state}'.")
+            break
+        time.sleep(30)
+
     return run_id
