@@ -122,7 +122,7 @@ Publica a aplicação Streamlit (FilmBot) na instância Lightsail via SSH. Execu
 **Etapas principais:**
 
 1. Lê outputs do Terraform (IP, chave SSH, credenciais AWS do FilmBot)
-2. Configura SSH com retry (até 12 tentativas, intervalo de 10s)
+2. Configura SSH com retry (até 30 tentativas, intervalo de 10s)
 3. Cria `.env` na instância com variáveis de ambiente da aplicação
 4. Cria `secrets.toml` do Streamlit com a senha de acesso
 5. Deploy por SSH:
