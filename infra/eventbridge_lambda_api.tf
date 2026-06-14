@@ -41,7 +41,7 @@ resource "aws_cloudwatch_event_rule" "lambda_api_tv_daily" {
 # - only_discover: true (processa APENAS o discover, pula gêneros/configurações)
 # - database/tables: nomes das tabelas no Glue Catalog para registrar os dados
 resource "aws_cloudwatch_event_target" "lambda_api_movie_discover_target" {
-  rule      = aws_cloudwatch_event_rule.lambda_api_movie_discover.name
+  rule      = aws_cloudwatch_event_rule.lambda_api_movie_daily.name
   target_id = "lambda-api-movie-discover"
   arn       = aws_lambda_function.simple_lambda.arn
 
@@ -60,7 +60,7 @@ resource "aws_cloudwatch_event_target" "lambda_api_movie_discover_target" {
 
 # Vincula a regra de séries à Lambda com payload para TV
 resource "aws_cloudwatch_event_target" "lambda_api_tv_discover_target" {
-  rule      = aws_cloudwatch_event_rule.lambda_api_tv_discover.name
+  rule      = aws_cloudwatch_event_rule.lambda_api_tv_daily.name
   target_id = "lambda-api-tv-discover"
   arn       = aws_lambda_function.simple_lambda.arn
 
@@ -84,7 +84,7 @@ resource "aws_lambda_permission" "allow_eventbridge_movie_daily" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.simple_lambda.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.lambda_api_movie_discover.arn
+  source_arn    = aws_cloudwatch_event_rule.lambda_api_movie_daily.arn
 }
 
 resource "aws_lambda_permission" "allow_eventbridge_tv_daily" {
@@ -92,7 +92,7 @@ resource "aws_lambda_permission" "allow_eventbridge_tv_daily" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.simple_lambda.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.lambda_api_tv_discover.arn
+  source_arn    = aws_cloudwatch_event_rule.lambda_api_tv_daily.arn
 }
 
 # =============================================================================
