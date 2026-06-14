@@ -16,19 +16,21 @@
 # =============================================================================
 
 # Agenda diária para discover de FILMES — 09:00 horário de Brasília (12:00 UTC)
-resource "aws_cloudwatch_event_rule" "lambda_api_movie_discover" {
-  name                = "lambda-api-movie-discover-${var.env}"
-  description         = "Dispara a Lambda para discover de filmes (diário)"
-  schedule_expression = "cron(00 12 * * ? *)" # Todos os dias às 12:00 UTC / 09:00 BRT
+resource "aws_cloudwatch_event_rule" "lambda_api_movie_daily" {
+  name        = "lambda-api-movie-daily-${var.env}"
+  description = "Dispara a Lambda para filmes com payload completo (diário)"
+  # schedule_expression = "cron(00 12 * * ? *)" # Todos os dias às 12:00 UTC / 09:00 BRT
+  schedule_expression = "cron(05 22 * * ? *)" # Todos os dias às 12:00 UTC / 09:00 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
 
 # Agenda diária para discover de SÉRIES — 09:05 horário de Brasília (12:05 UTC)
-resource "aws_cloudwatch_event_rule" "lambda_api_tv_discover" {
-  name                = "lambda-api-tv-discover-${var.env}"
-  description         = "Dispara a Lambda para discover de series (diário)"
-  schedule_expression = "cron(05 12 * * ? *)" # Todos os dias às 12:05 UTC / 09:05 BRT
+resource "aws_cloudwatch_event_rule" "lambda_api_tv_daily" {
+  name        = "lambda-api-tv-daily-${var.env}"
+  description = "Dispara a Lambda para séries com payload completo (diário)"
+  # schedule_expression = "cron(05 12 * * ? *)" # Todos os dias às 12:05 UTC / 09:05 BRT
+  schedule_expression = "cron(10 22 * * ? *)" # Todos os dias às 12:05 UTC / 09:05 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
@@ -39,7 +41,7 @@ resource "aws_cloudwatch_event_rule" "lambda_api_tv_discover" {
 # - only_discover: true (processa APENAS o discover, pula gêneros/configurações)
 # - database/tables: nomes das tabelas no Glue Catalog para registrar os dados
 resource "aws_cloudwatch_event_target" "lambda_api_movie_discover_target" {
-  rule      = aws_cloudwatch_event_rule.lambda_api_movie_discover.name
+  rule      = aws_cloudwatch_event_rule.lambda_api_movie_daily.name
   target_id = "lambda-api-movie-discover"
   arn       = aws_lambda_function.simple_lambda.arn
 
@@ -51,13 +53,14 @@ resource "aws_cloudwatch_event_target" "lambda_api_movie_discover_target" {
     table_discover_movie            = var.glue_catalog_table_discover_movie_name,
     table_genre_movie               = var.glue_catalog_table_genre_movie_name,
     table_configuration_languages   = var.glue_catalog_table_configuration_languages_name,
-    table_watch_providers_ref_movie = var.glue_catalog_table_watch_providers_ref_movie_name
+    table_watch_providers_ref_movie = var.glue_catalog_table_watch_providers_ref_movie_name,
+    table_now_playing_movie         = var.glue_catalog_table_now_playing_movie_name
   })
 }
 
 # Vincula a regra de séries à Lambda com payload para TV
 resource "aws_cloudwatch_event_target" "lambda_api_tv_discover_target" {
-  rule      = aws_cloudwatch_event_rule.lambda_api_tv_discover.name
+  rule      = aws_cloudwatch_event_rule.lambda_api_tv_daily.name
   target_id = "lambda-api-tv-discover"
   arn       = aws_lambda_function.simple_lambda.arn
 
@@ -76,20 +79,20 @@ resource "aws_cloudwatch_event_target" "lambda_api_tv_discover_target" {
 # Permissão explícita para o EventBridge invocar a Lambda.
 # Sem esta permissão, o EventBridge dispararia e receberia um erro de autorização.
 # "principal = events.amazonaws.com" = o serviço EventBridge (não um usuário)
-resource "aws_lambda_permission" "allow_eventbridge_movie_discover" {
+resource "aws_lambda_permission" "allow_eventbridge_movie_daily" {
   statement_id  = "AllowEventBridgeMovieDiscoverExecution"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.simple_lambda.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.lambda_api_movie_discover.arn
+  source_arn    = aws_cloudwatch_event_rule.lambda_api_movie_daily.arn
 }
 
-resource "aws_lambda_permission" "allow_eventbridge_tv_discover" {
+resource "aws_lambda_permission" "allow_eventbridge_tv_daily" {
   statement_id  = "AllowEventBridgeTvDiscoverExecution"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.simple_lambda.function_name
   principal     = "events.amazonaws.com"
-  source_arn    = aws_cloudwatch_event_rule.lambda_api_tv_discover.arn
+  source_arn    = aws_cloudwatch_event_rule.lambda_api_tv_daily.arn
 }
 
 # =============================================================================
@@ -101,7 +104,7 @@ resource "aws_lambda_permission" "allow_eventbridge_tv_discover" {
 # - watch_providers_ref: lista de plataformas de streaming disponíveis
 #
 # Rodam todo dia 1 do mês — cadência suficiente para dados que mudam algumas vezes por ano.
-# "skip_discover: true" = pula o discover nesta execução (já rodou na diária)
+# "skip_daily: true" = pula o discover nesta execução (já rodou na diária)
 # =============================================================================
 
 resource "aws_cloudwatch_event_rule" "lambda_api_movie_monthly" {
@@ -127,7 +130,7 @@ resource "aws_cloudwatch_event_target" "lambda_api_movie_monthly_target" {
 
   input = jsonencode({
     type                            = "movie",
-    skip_discover                   = true, # Pula o discover (já rodou na execução diária)
+    skip_daily                      = true, # Pula o discover (já rodou na execução diária)
     database                        = var.glue_catalog_database_movie_name,
     database_unified                = var.glue_catalog_database_unified_name,
     table_discover_movie            = var.glue_catalog_table_discover_movie_name,
@@ -144,7 +147,7 @@ resource "aws_cloudwatch_event_target" "lambda_api_tv_monthly_target" {
 
   input = jsonencode({
     type                          = "tv",
-    skip_discover                 = true,
+    skip_daily                    = true,
     database                      = var.glue_catalog_database_tv_name,
     database_unified              = var.glue_catalog_database_unified_name,
     table_discover_tv             = var.glue_catalog_table_discover_tv_name,
