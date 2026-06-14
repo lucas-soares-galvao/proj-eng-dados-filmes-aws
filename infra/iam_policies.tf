@@ -241,16 +241,16 @@ resource "aws_iam_role_policy" "glue_dq_read_sot_spec" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket"]
+        Effect = "Allow"
+        Action = ["s3:ListBucket"]
         Resource = [
           "arn:aws:s3:::${local.envs.s3_bucket_sot}",
           "arn:aws:s3:::${local.envs.s3_bucket_spec}",
         ]
       },
       {
-        Effect   = "Allow"
-        Action   = ["s3:GetObject"]
+        Effect = "Allow"
+        Action = ["s3:GetObject"]
         Resource = [
           "arn:aws:s3:::${local.envs.s3_bucket_sot}/*",
           "arn:aws:s3:::${local.envs.s3_bucket_spec}/*",
