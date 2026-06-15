@@ -39,27 +39,31 @@ Os dados de filmes e séries chegam em tabelas separadas (discover, details, gen
 ## SQL de unificação (resumo)
 
 ```sql
-WITH filmes AS (
-  SELECT d.*, det.runtime
-  FROM tb_discover_movie_tmdb d
-  LEFT JOIN tb_details_movie_tmdb det ON d.id = det.id
-  -- deduplica por id mantendo mais recente/popular
+WITH unified AS (
+  SELECT * FROM movies  -- deduplicados por (id, year DESC, popularity DESC)
+  UNION ALL
+  SELECT * FROM tv_shows
 ),
-series AS (
-  SELECT d.*, det.number_of_seasons, det.number_of_episodes
-  FROM tb_discover_tv_tmdb d
-  LEFT JOIN tb_details_tv_tmdb det ON d.id = det.id
+details AS (
+  -- filmes e séries unidos por media_type; colunas exclusivas recebem NULL no outro lado
+  SELECT id, 'movie' AS media_type, runtime, NULL AS number_of_seasons, ... FROM movie_details
+  UNION ALL
+  SELECT id, 'tv'    AS media_type, NULL AS runtime, number_of_seasons, ... FROM tv_details
 ),
-unificado AS (
-  SELECT * FROM filmes UNION ALL SELECT * FROM series
+providers AS (
+  SELECT id, 'movie' AS media_type, streaming_providers FROM movie_providers
+  UNION ALL
+  SELECT id, 'tv'    AS media_type, streaming_providers FROM tv_providers
 )
-SELECT u.*, g.genre_names, l.language_name, wp.streaming_providers,
-       CASE WHEN np.id IS NOT NULL THEN TRUE ELSE FALSE END AS in_theaters,
-       np.theater_start_date, np.theater_end_date
-FROM unificado u
-LEFT JOIN tb_genre_* g ON ...
-LEFT JOIN tb_configuration_languages_tmdb l ON ...
-LEFT JOIN tb_watch_providers_* wp ON ...
+SELECT
+  COALESCE(NULLIF(TRIM(u.overview), ''), d.overview_pt, d.overview_en) AS overview,
+  d.runtime AS runtime_minutes, d.number_of_seasons, d.number_of_episodes,
+  p.streaming_providers,
+  CASE WHEN np.id IS NOT NULL THEN TRUE ELSE FALSE END AS in_theaters,
+  ...
+FROM unified u
+LEFT JOIN details   d  ON d.id = u.id AND d.media_type = u.media_type
+LEFT JOIN providers p  ON p.id = u.id AND p.media_type = u.media_type
 LEFT JOIN tb_now_playing_movie_tmdb np ON np.id = u.id AND u.media_type = 'movie'
 ```
 
