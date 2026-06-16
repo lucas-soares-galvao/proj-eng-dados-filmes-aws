@@ -3,13 +3,13 @@
 # =============================================================================
 
 resource "aws_glue_job" "etl_job_pythonshell" {
-  name         = local.envs.glue_etl_job_name
-  description  = "Lê JSON do SOR, transforma em Parquet no SOT e aciona os jobs Details e DQ"
-  role_arn     = aws_iam_role.glue_etl_role.arn
+  name                    = local.envs.glue_etl_job_name
+  description             = "Lê JSON do SOR, transforma em Parquet no SOT e aciona os jobs Details e DQ"
+  role_arn                = aws_iam_role.glue_etl_role.arn
   job_run_queuing_enabled = true
-  max_retries  = 0
-  timeout      = 15
-  max_capacity = local.pythonshell_min_capacity
+  max_retries             = 0
+  timeout                 = 15
+  max_capacity            = local.pythonshell_min_capacity
 
   command {
     # Caminho no S3 para o script principal do job.
