@@ -165,4 +165,4 @@ pytest test/glue_data_quality/ --cov=app/glue_data_quality --cov-report=term-mis
 
 ## Cobertura mínima
 
-**70%** — definido em `pytest.ini` na raiz do projeto.
+**80%** — definido via `--cov-fail-under=80` no workflow de CI (`.github/workflows/01_test.yml`).

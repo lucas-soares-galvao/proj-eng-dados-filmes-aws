@@ -174,4 +174,4 @@ pytest test/lambda_api/ --cov=app/lambda_api --cov-report=term-missing
 
 ## Cobertura mínima
 
-**70%** — definido em `pytest.ini` na raiz do projeto. O CI falha se a cobertura ficar abaixo desse limite.
+**80%** — definido via `--cov-fail-under=80` no workflow de CI (`.github/workflows/01_test.yml`). O CI falha se a cobertura ficar abaixo desse limite.
