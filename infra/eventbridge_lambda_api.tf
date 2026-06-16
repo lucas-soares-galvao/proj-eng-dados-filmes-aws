@@ -19,7 +19,7 @@
 resource "aws_cloudwatch_event_rule" "lambda_api_movie_daily" {
   name                = "${local.tmdb_prefix}-lambda-api-movie-daily-${var.env}"
   description         = "Dispara a Lambda para filmes com payload completo (diário)"
-  schedule_expression = "cron(00 23 * * ? *)" # Todos os dias às 12:00 UTC / 09:00 BRT
+  schedule_expression = "cron(30 23 * * ? *)" # Todos os dias às 12:00 UTC / 09:00 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
@@ -28,7 +28,7 @@ resource "aws_cloudwatch_event_rule" "lambda_api_movie_daily" {
 resource "aws_cloudwatch_event_rule" "lambda_api_tv_daily" {
   name                = "${local.tmdb_prefix}-lambda-api-tv-daily-${var.env}"
   description         = "Dispara a Lambda para séries com payload completo (diário)"
-  schedule_expression = "cron(05 23 * * ? *)" # Todos os dias às 12:05 UTC / 09:05 BRT
+  schedule_expression = "cron(35 23 * * ? *)" # Todos os dias às 12:05 UTC / 09:05 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
@@ -46,13 +46,13 @@ resource "aws_cloudwatch_event_target" "lambda_api_movie_discover_target" {
   input = jsonencode({
     type                            = "movie",
     only_discover                   = true,
-    database                        = var.glue_catalog_database_movie_name,
-    database_unified                = var.glue_catalog_database_unified_name,
-    table_discover_movie            = var.glue_catalog_table_discover_movie_name,
-    table_genre_movie               = var.glue_catalog_table_genre_movie_name,
-    table_configuration_languages   = var.glue_catalog_table_configuration_languages_name,
-    table_watch_providers_ref_movie = var.glue_catalog_table_watch_providers_ref_movie_name,
-    table_now_playing_movie         = var.glue_catalog_table_now_playing_movie_name
+    database                        = local.envs.glue_catalog_db_movie,
+    database_unified                = local.envs.glue_catalog_db_unified,
+    table_discover_movie            = local.envs.glue_catalog_tb_discover_movie,
+    table_genre_movie               = local.envs.glue_catalog_tb_genre_movie,
+    table_configuration_languages   = local.envs.glue_catalog_tb_configuration_languages,
+    table_watch_providers_ref_movie = local.envs.glue_catalog_tb_watch_providers_ref_movie,
+    table_now_playing_movie         = local.envs.glue_catalog_tb_now_playing_movie
   })
 }
 
@@ -65,12 +65,12 @@ resource "aws_cloudwatch_event_target" "lambda_api_tv_discover_target" {
   input = jsonencode({
     type                          = "tv",
     only_discover                 = true,
-    database                      = var.glue_catalog_database_tv_name,
-    database_unified              = var.glue_catalog_database_unified_name,
-    table_discover_tv             = var.glue_catalog_table_discover_tv_name,
-    table_genre_tv                = var.glue_catalog_table_genre_tv_name,
-    table_configuration_countries = var.glue_catalog_table_configuration_countries_name,
-    table_watch_providers_ref_tv  = var.glue_catalog_table_watch_providers_ref_tv_name
+    database                      = local.envs.glue_catalog_db_tv,
+    database_unified              = local.envs.glue_catalog_db_unified,
+    table_discover_tv             = local.envs.glue_catalog_tb_discover_tv,
+    table_genre_tv                = local.envs.glue_catalog_tb_genre_tv,
+    table_configuration_countries = local.envs.glue_catalog_tb_configuration_countries,
+    table_watch_providers_ref_tv  = local.envs.glue_catalog_tb_watch_providers_ref_tv
   })
 }
 
@@ -108,7 +108,7 @@ resource "aws_lambda_permission" "allow_eventbridge_tv_daily" {
 resource "aws_cloudwatch_event_rule" "lambda_api_movie_monthly" {
   name                = "${local.tmdb_prefix}-lambda-api-movie-monthly-${var.env}"
   description         = "Dispara a Lambda para filmes com payload completo (mensal, dia 1)"
-  schedule_expression = "cron(00 12 1 * ? *)" # Todo dia 1 do mês às 12:00 UTC / 09:00 BRT
+  schedule_expression = "cron(30 23 1 * ? *)" # Todo dia 1 do mês às 12:00 UTC / 09:00 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
@@ -116,7 +116,7 @@ resource "aws_cloudwatch_event_rule" "lambda_api_movie_monthly" {
 resource "aws_cloudwatch_event_rule" "lambda_api_tv_monthly" {
   name                = "${local.tmdb_prefix}-lambda-api-tv-monthly-${var.env}"
   description         = "Dispara a Lambda para series com payload completo (mensal, dia 1)"
-  schedule_expression = "cron(05 12 1 * ? *)" # Todo dia 1 do mês às 12:05 UTC / 09:05 BRT
+  schedule_expression = "cron(35 23 1 * ? *)" # Todo dia 1 do mês às 12:05 UTC / 09:05 BRT
   state               = local.eventbridge_schedule_state
   tags                = local.component_tags.eventbridge
 }
@@ -129,12 +129,12 @@ resource "aws_cloudwatch_event_target" "lambda_api_movie_monthly_target" {
   input = jsonencode({
     type                            = "movie",
     skip_daily                      = true, # Pula o discover (já rodou na execução diária)
-    database                        = var.glue_catalog_database_movie_name,
-    database_unified                = var.glue_catalog_database_unified_name,
-    table_discover_movie            = var.glue_catalog_table_discover_movie_name,
-    table_genre_movie               = var.glue_catalog_table_genre_movie_name,
-    table_configuration_languages   = var.glue_catalog_table_configuration_languages_name,
-    table_watch_providers_ref_movie = var.glue_catalog_table_watch_providers_ref_movie_name
+    database                        = local.envs.glue_catalog_db_movie,
+    database_unified                = local.envs.glue_catalog_db_unified,
+    table_discover_movie            = local.envs.glue_catalog_tb_discover_movie,
+    table_genre_movie               = local.envs.glue_catalog_tb_genre_movie,
+    table_configuration_languages   = local.envs.glue_catalog_tb_configuration_languages,
+    table_watch_providers_ref_movie = local.envs.glue_catalog_tb_watch_providers_ref_movie
   })
 }
 
@@ -146,12 +146,12 @@ resource "aws_cloudwatch_event_target" "lambda_api_tv_monthly_target" {
   input = jsonencode({
     type                          = "tv",
     skip_daily                    = true,
-    database                      = var.glue_catalog_database_tv_name,
-    database_unified              = var.glue_catalog_database_unified_name,
-    table_discover_tv             = var.glue_catalog_table_discover_tv_name,
-    table_genre_tv                = var.glue_catalog_table_genre_tv_name,
-    table_configuration_countries = var.glue_catalog_table_configuration_countries_name,
-    table_watch_providers_ref_tv  = var.glue_catalog_table_watch_providers_ref_tv_name
+    database                      = local.envs.glue_catalog_db_tv,
+    database_unified              = local.envs.glue_catalog_db_unified,
+    table_discover_tv             = local.envs.glue_catalog_tb_discover_tv,
+    table_genre_tv                = local.envs.glue_catalog_tb_genre_tv,
+    table_configuration_countries = local.envs.glue_catalog_tb_configuration_countries,
+    table_watch_providers_ref_tv  = local.envs.glue_catalog_tb_watch_providers_ref_tv
   })
 }
 
