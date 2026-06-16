@@ -13,7 +13,7 @@ resource "aws_glue_job" "etl_job_pythonshell" {
   command {
     # Caminho no S3 para o script principal do job.
     # O Glue baixa e executa este arquivo quando o job inicia.
-    script_location = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_etl_job_name}/app/main.py"
+    script_location = "s3://${local.envs.s3_bucket_aux}/${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/app/main.py"
     name            = "pythonshell"
     python_version  = "3.9"
   }
@@ -33,7 +33,7 @@ resource "aws_glue_job" "etl_job_pythonshell" {
     # Arquivos .zip são suportados apenas em jobs Spark.
     # O arquivo .whl contém o pacote "src" (src/utils.py, etc.) da aplicação,
     # permitindo que o main.py faça "from src.utils import ..." sem erro.
-    "--extra-py-files" = "s3://${local.envs.s3_bucket_aux}/${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
+    "--extra-py-files" = "s3://${local.envs.s3_bucket_aux}/${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
 
     # ==========================================================================
     # --additional-python-modules: Instala bibliotecas PyPI no runtime do Glue
@@ -99,7 +99,7 @@ resource "aws_glue_job" "etl_job_pythonshell" {
 # =============================================================================
 resource "aws_s3_object" "deploy_scripts_bucket_etl" {
   bucket     = aws_s3_bucket.auxiliary_bucket.id
-  key        = "${local.envs.glue_etl_job_name}/app/main.py"
+  key        = "${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/app/main.py"
   source     = "${local.glue_etl_src_path}/main.py"
   etag       = filemd5("${local.glue_etl_src_path}/main.py")
   tags       = local.component_tags.glue_etl
@@ -132,7 +132,7 @@ resource "null_resource" "glue_etl_wheel_build" {
 # "source_hash" usa o hash dos arquivos fonte para detectar mudanças.
 resource "aws_s3_object" "deploy_app_wheel_etl" {
   bucket      = aws_s3_bucket.auxiliary_bucket.id
-  key         = "${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
+  key         = "${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
   source      = "${local.glue_etl_wheel_build_path}/${local.glue_etl_wheel_filename}"
   source_hash = null_resource.glue_etl_wheel_build.triggers.source_hash
   tags        = local.component_tags.glue_etl
