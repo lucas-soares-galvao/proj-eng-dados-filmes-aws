@@ -133,4 +133,4 @@ pytest test/glue_details/ --cov=app/glue_details --cov-report=term-missing
 
 ## Cobertura mínima
 
-**70%** — definido em `pytest.ini` na raiz do projeto.
+**80%** — definido via `--cov-fail-under=80` no workflow de CI (`.github/workflows/01_test.yml`).

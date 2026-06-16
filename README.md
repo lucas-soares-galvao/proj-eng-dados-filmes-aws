@@ -26,6 +26,10 @@ Todos os dias, automaticamente:
                                                     │
                                                     ▼
                                            [Unificador]  ──► [App de Recomendações]
+                                                                       ▲
+                                                                       │
+                                          [Agendador do FilmBot] ──────┘
+                                          (liga/desliga o servidor por horário)
 ```
 
 ---
