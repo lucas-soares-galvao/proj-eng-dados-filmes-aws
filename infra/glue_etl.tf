@@ -113,28 +113,18 @@ resource "aws_s3_object" "deploy_scripts_bucket_etl" {
 # O pacote "src" (src/utils.py) precisa ser empacotado como .whl para
 # que o main.py possa importar "from src.utils import ..." no Glue PythonShell.
 #
-# O "null_resource" executa o script build_glue_wheel.py localmente.
-# Os triggers detectam mudanças nos arquivos .py da pasta src/ para
-# re-empacotar apenas quando necessário (evita rebuild em todo apply).
+# O build do .whl (scripts/build_glue_wheel.py) é executado como etapa do
+# pipeline de CI (.github/workflows/02_terraform.yml), antes do "terraform
+# plan". Não usamos null_resource/local-exec aqui: o Terraform state poderia
+# considerar o build "já feito" (triggers inalterados) mesmo em um runner novo
+# onde o arquivo local não existe — causando "no such file or directory" no
+# aws_s3_object abaixo.
 # =============================================================================
-resource "null_resource" "glue_etl_wheel_build" {
-  triggers = {
-    source_hash  = sha256(join("", [for f in fileset(local.glue_etl_src_path, "src/**/*.py") : filesha256("${local.glue_etl_src_path}/${f}")]))
-    builder_hash = filesha256("${path.module}/scripts/build_glue_wheel.py")
-  }
-
-  provisioner "local-exec" {
-    command = "python ${path.module}/scripts/build_glue_wheel.py --src ${local.glue_etl_src_path} --dest ${local.glue_etl_wheel_build_path} --name glue_etl_src"
-  }
-}
-
-# Envia o arquivo .whl para o S3 após o build.
-# "source_hash" usa o hash dos arquivos fonte para detectar mudanças.
 resource "aws_s3_object" "deploy_app_wheel_etl" {
-  bucket      = aws_s3_bucket.auxiliary_bucket.id
-  key         = "${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
-  source      = "${local.glue_etl_wheel_build_path}/${local.glue_etl_wheel_filename}"
-  source_hash = null_resource.glue_etl_wheel_build.triggers.source_hash
-  tags        = local.component_tags.glue_etl
-  depends_on  = [null_resource.glue_etl_wheel_build, aws_s3_bucket.auxiliary_bucket]
+  bucket     = aws_s3_bucket.auxiliary_bucket.id
+  key        = "${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/${local.glue_etl_wheel_filename}"
+  source     = "${local.glue_etl_wheel_build_path}/${local.glue_etl_wheel_filename}"
+  etag       = filemd5("${local.glue_etl_wheel_build_path}/${local.glue_etl_wheel_filename}")
+  tags       = local.component_tags.glue_etl
+  depends_on = [aws_s3_bucket.auxiliary_bucket]
 }
