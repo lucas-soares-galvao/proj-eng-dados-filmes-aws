@@ -45,4 +45,4 @@ systemctl daemon-reload
 systemctl enable filmbot caddy
 systemctl start filmbot caddy
 
-echo "FilmBot iniciado. Acesse https://filmbot.is-a.dev"
+echo "FilmBot iniciado."
