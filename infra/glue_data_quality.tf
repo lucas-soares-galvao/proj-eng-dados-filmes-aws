@@ -54,7 +54,7 @@ resource "aws_glue_job" "data_quality_job" {
   ]
 
   execution_property {
-    max_concurrent_runs = 11
+    max_concurrent_runs = 20
   }
 }
 
