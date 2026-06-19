@@ -522,9 +522,9 @@ resource "aws_iam_policy" "cicd_lightsail" {
         Resource = "arn:aws:lightsail:us-east-1:${data.aws_caller_identity.current.account_id}:Instance/*"
       },
       {
-        Sid    = "LightsailKeyPairOperations"
-        Effect = "Allow"
-        Action = "lightsail:DeleteKeyPair"
+        Sid      = "LightsailKeyPairOperations"
+        Effect   = "Allow"
+        Action   = "lightsail:DeleteKeyPair"
         Resource = "arn:aws:lightsail:us-east-1:${data.aws_caller_identity.current.account_id}:KeyPair/*"
       },
       {
