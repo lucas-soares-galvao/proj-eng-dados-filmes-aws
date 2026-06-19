@@ -87,12 +87,12 @@ Mudar um valor para `true` faz com que o próximo push naquele ambiente execute 
 
 **Etapas principais:**
 
-1. Build do pacote Lambda (`infra/scripts/build_lambda_package.py`) e wheels Glue (ETL, Agg, Details)
-2. Lê `infra/destroy_config.json` para decidir se destrói ou aplica
+1. Build do pacote Lambda (`infra/scripts/build_lambda_package.py`) e wheels Glue (ETL, Agg, Details) — verifica se os artefatos foram gerados
+2. Lê `infra/destroy_config.json` para decidir se destrói ou aplica — valida que o valor é `true` ou `false`
 3. `terraform init` com backend S3 + DynamoDB
 4. `terraform validate` e `terraform fmt -check` (**bloqueantes**) + TFLint e Checkov (não-bloqueantes — apenas avisos)
 5. Injeta o e-mail de notificação no `.tfvars` (não é commitado no repo)
-6. **Bootstrap das IAM policies** — aplica com `-target` as 6 policies do CI/CD antes do plan principal, resolvendo o problema de bootstrap (a role precisa das policies para gerenciar os recursos, mas as policies são criadas pelo mesmo Terraform). Idempotente — se as policies já existem, é um no-op
+6. **Bootstrap das IAM policies** — aplica com `-target` as 6 policies do CI/CD antes do plan principal, resolvendo o problema de bootstrap (a role precisa das policies para gerenciar os recursos, mas as policies são criadas pelo mesmo Terraform). Idempotente — se as policies já existem, é um no-op. Após 120s de espera (eventual consistency do IAM), verifica via `aws iam list-attached-role-policies` se as 6 policies estão de fato attachadas à role — falha o pipeline se alguma estiver ausente
 7. `terraform destroy` **ou** `terraform plan` + Infracost + `terraform apply`
 
 **Autenticação AWS:** OIDC — assume a role `lsg-github-actions-{env}` com políticas de privilégio mínimo gerenciadas pelo Terraform (`cicd_iam.tf`). As variáveis `cicd_statefile_s3_bucket` e `cicd_lock_dynamodb_table` são passadas via `-var` a partir dos secrets `aws-statefile-s3-bucket` e `aws-lock-dynamodb-table`.
@@ -122,15 +122,16 @@ Publica a aplicação Streamlit (FilmBot) na instância Lightsail via SSH. Execu
 
 **Etapas principais:**
 
-1. Lê outputs do Terraform (IP, chave SSH, credenciais AWS do FilmBot)
-2. Configura SSH com retry (até 30 tentativas, intervalo de 10s)
-3. Cria `.env` na instância com variáveis de ambiente da aplicação
-4. Cria `secrets.toml` do Streamlit com a senha de acesso
+1. Lê outputs do Terraform (IP, chave SSH, credenciais AWS do FilmBot) — valida que nenhum output crítico está vazio
+2. Configura SSH com retry (até 30 tentativas, intervalo de 10s) — falha o pipeline se SSH não ficar disponível em 5 minutos
+3. Cria `.env` na instância com variáveis de ambiente da aplicação — verifica via SSH se o arquivo foi criado
+4. Cria `secrets.toml` do Streamlit com a senha de acesso — verifica via SSH se o arquivo foi criado
 5. Instala o Caddy como proxy reverso HTTPS (se ainda não instalado)
 6. Deploy por SSH:
    - **Primeiro deploy**: clone do repo, venv, systemd services (filmbot + caddy)
    - **Updates**: git pull, pip install, restart de ambos os services
-7. Expõe a aplicação no IP público da instância Lightsail
+   - Verifica se os serviços `filmbot` e `caddy` estão ativos (`systemctl is-active`) — falha o pipeline se algum estiver inativo
+7. Health check — aguarda 30s e faz `curl` no IP público para confirmar que o app está respondendo
 
 **Branch deployada por ambiente:**
 
