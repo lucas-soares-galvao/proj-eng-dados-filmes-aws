@@ -524,10 +524,7 @@ resource "aws_iam_policy" "cicd_lightsail" {
       {
         Sid    = "LightsailKeyPairOperations"
         Effect = "Allow"
-        Action = [
-          "lightsail:DeleteKeyPair",
-          "lightsail:GetKeyPair",
-        ]
+        Action = "lightsail:DeleteKeyPair"
         Resource = "arn:aws:lightsail:us-east-1:${data.aws_caller_identity.current.account_id}:KeyPair/*"
       },
       {
@@ -535,7 +532,6 @@ resource "aws_iam_policy" "cicd_lightsail" {
         Effect = "Allow"
         Action = [
           "lightsail:ReleaseStaticIp",
-          "lightsail:GetStaticIp",
           "lightsail:AttachStaticIp",
           "lightsail:DetachStaticIp",
         ]
@@ -559,7 +555,9 @@ resource "aws_iam_policy" "cicd_lightsail" {
         Effect = "Allow"
         Action = [
           "lightsail:GetInstances",
+          "lightsail:GetKeyPair",
           "lightsail:GetKeyPairs",
+          "lightsail:GetStaticIp",
           "lightsail:GetStaticIps",
           "lightsail:GetBundles",
           "lightsail:GetBlueprints",
