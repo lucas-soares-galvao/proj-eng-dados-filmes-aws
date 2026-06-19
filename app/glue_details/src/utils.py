@@ -13,8 +13,7 @@ import requests
 from awsglue.utils import getResolvedOptions
 from deep_translator import GoogleTranslator
 
-from shared_utils.tmdb_api import get_tmdb_api_key, tmdb_get
-from shared_utils.triggers import trigger_glue_job
+from shared_utils.tmdb_api import tmdb_get
 
 logger = logging.getLogger()
 

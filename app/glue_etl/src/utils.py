@@ -10,8 +10,6 @@ import boto3
 import pandas as pd
 from awsglue.utils import getResolvedOptions
 
-from shared_utils.triggers import trigger_glue_job
-
 SOR_KEYS = {
     "movie": {
         "genre":                "tmdb/genre/movie/generos_filmes.json",

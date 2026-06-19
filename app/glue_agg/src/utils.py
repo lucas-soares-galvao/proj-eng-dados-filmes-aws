@@ -5,11 +5,8 @@ import sys
 from typing import Any, Dict
 
 import awswrangler as wr
-import boto3
 import pandas as pd
 from awsglue.utils import getResolvedOptions
-
-from shared_utils.triggers import trigger_glue_job
 
 logger = logging.getLogger()
 

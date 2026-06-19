@@ -4,9 +4,7 @@ import json
 import logging
 from typing import Any, Optional
 
-import boto3
-
-from shared_utils.tmdb_api import get_tmdb_api_key, tmdb_get
+from shared_utils.tmdb_api import tmdb_get
 
 S3Client = Any
 GlueClient = Any
