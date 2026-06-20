@@ -38,7 +38,6 @@ Isola a camada de ingestão (HTTP → S3) da camada de transformação (S3 → P
 | `collect_watch_providers_ref(...)` | Coleta lista de plataformas de streaming disponíveis |
 | `collect_discover_data(...)` | Coleta filmes/séries populares de um ano (paginado) |
 | `collect_now_playing_data(...)` | Coleta filmes em cartaz nos cinemas no Brasil (`region=BR`, paginado), extrai datas de janela teatral e salva no S3 SOR |
-| `trigger_glue_job(glue_client, job_name, glue_catalog_args, table_type, table_name, year, end_year)` | Aciona o Glue ETL com argumentos dinâmicos; retorna o `JobRunId` |
 
 ## Funções compartilhadas (`shared/`)
 
