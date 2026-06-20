@@ -96,7 +96,6 @@ def get_parameters_glue() -> Dict[str, Any]:
         "TABLE_NAME",
         "TABLE_TYPE",
         "GLUE_DATA_QUALITY_JOB_NAME",
-        "GLUE_AGG_JOB_NAME",
         "GLUE_DETAILS_JOB_NAME",
     ]
     args = get_resolved_option(required_args)

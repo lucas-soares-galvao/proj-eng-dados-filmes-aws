@@ -66,6 +66,7 @@ O LLM recebe os resultados reais do Athena e formata como JSON com campos amigá
 |---|---|---|
 | `agent.py` | `recomendar(user_input)` | Orquestra as 3 etapas: extrair filtros → consultar → formatar |
 | `agent.py` | `buscar_titulos_spec(filtros)` | Executa query SQL no Athena com filtros dinâmicos |
+| `agent.py` | `limpar_duracao(raw)` | Formata string de duração para exibição nos cards (ex: "120 min", "3 temporadas") |
 | `app.py` | Interface Streamlit | Renderiza cards, gerencia estado e exibe resultados |
 
 ## Deploy

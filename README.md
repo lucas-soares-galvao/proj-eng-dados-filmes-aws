@@ -115,6 +115,7 @@ O pipeline é orquestrado por 5 workflows em `.github/workflows/`. Consulte [`.g
 
 ```
 app/         → código de cada serviço do pipeline
+  shared_src/  → biblioteca Python compartilhada (API client, triggers) usada por Lambda e Glue jobs
 infra/       → infraestrutura AWS (Terraform)
 test/        → testes automatizados por serviço
 .github/     → pipelines de CI/CD (GitHub Actions)
