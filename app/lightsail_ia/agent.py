@@ -7,15 +7,17 @@ O QUE ESTE ARQUIVO FAZ?
 Implementa o "cérebro" do FilmBot em 3 passos usando OpenAI + AWS Athena:
 
   PASSO 1 — Interpretação (OpenAI GPT-4o):
-    O usuário digita em linguagem natural: "filmes de terror dos anos 2010".
-    O GPT-4o lê isso e decide os filtros SQL:
-      genero="Terror", tipo="movie", ano=None (não especificado um ano exato)
-    Ele NÃO executa código — apenas devolve os argumentos como JSON.
+    O usuário digita em linguagem natural: "filmes coreanos de terror dos anos 2010".
+    O GPT-4o conhece o schema da tabela SPEC e gera a cláusula WHERE do SQL:
+      "media_type = 'movie' AND original_language = 'ko'
+       AND lower(genre_names) LIKE '%terror%'
+       AND year BETWEEN '2010' AND '2019'"
+    Ele NÃO executa código — apenas devolve a cláusula WHERE como string.
 
   PASSO 2 — Consulta real no data lake (AWS Athena):
-    Com os filtros extraídos, executamos uma query SQL na tabela SPEC do data lake.
+    A cláusula WHERE gerada pelo LLM é validada (segurança) e executada no Athena.
+    O filtro fixo vote_count >= 50 é sempre aplicado automaticamente.
     O Athena retorna títulos reais que passaram pelo pipeline completo de ETL.
-    Ex: até 30 filmes de terror ordenados por popularidade.
 
   PASSO 3 — Formatação das recomendações (OpenAI GPT-4o):
     O GPT-4o recebe os títulos reais e os formata como recomendações personalizadas,
@@ -27,14 +29,9 @@ POR QUE USAR "FUNCTION CALLING" (TOOL USE)?
   "chamar funções" de forma estruturada. Em vez de responder em texto livre,
   o modelo devolve um JSON com argumentos específicos que você definiu.
 
-  ANALOGIA: Como pedir a um assistente para preencher um formulário.
-    Você diz "quero ver filmes de terror de 2015".
-    O assistente não escreve um texto — ele preenche os campos:
-    { genero: "Terror", tipo: "movie", ano: 2015 }
-    Você então usa esses campos estruturados para fazer a busca real.
-
-  Sem Function Calling, o modelo responderia em texto livre e seria difícil
-  extrair os filtros de forma confiável para montar a query SQL.
+  Nesta abordagem "livre", o LLM recebe o schema completo da tabela e gera
+  a cláusula WHERE diretamente. Isso permite que qualquer combinação de filtros
+  seja usada sem precisar mapear cada pergunta possível no código.
 
 TECNOLOGIAS UTILIZADAS:
   - litellm: interface unificada para múltiplos provedores de LLM (OpenAI, DeepSeek, Claude, etc.)
@@ -54,6 +51,7 @@ VARIÁVEIS DE AMBIENTE NECESSÁRIAS (arquivo .env):
 
 import gc
 import os
+import re
 import json
 import time
 import boto3
@@ -75,12 +73,10 @@ _LLM_API_KEY = os.getenv("LLM_API_KEY")
 # O modelo não executa a função — ele apenas decide quais argumentos usar.
 # Nós executamos a função de verdade com os argumentos que o modelo escolheu.
 #
-# Pense como um formulário que o GPT preenche baseado no pedido do usuário:
-#   - genero:      qual gênero filtrar?
-#   - tipo:        filme ("movie") ou série ("tv")?
-#   - ano:         em qual ano lançado?
-#   - nota_minima: qual nota mínima?
-#   - limite:      quantos resultados retornar?
+# Nesta abordagem "livre", o LLM recebe o schema completo da tabela SPEC
+# no system prompt e gera a cláusula WHERE diretamente. Isso permite que
+# qualquer combinação de filtros seja usada sem precisar mapear cada pergunta
+# possível no código. O parâmetro limite continua estruturado para segurança.
 TOOL = {
     "type": "function",
     "function": {
@@ -89,90 +85,74 @@ TOOL = {
         "parameters": {
             "type": "object",
             "properties": {
-                "genero": {
+                "filtro_where": {
                     "type": "string",
-                    "description": "Gênero do filme/série (ex: Terror, Ação, Ficção Científica)",
-                },
-                "tipo": {
-                    "type": "string",
-                    "enum": ["movie", "tv"],  # apenas esses dois valores são válidos
-                    "description": "Filme (movie) ou série (tv)",
-                },
-                "ano": {
-                    "type": "integer",
-                    "description": "Ano de lançamento",
-                },
-                "nota_minima": {
-                    "type": "number",
-                    "description": "Nota mínima de 0 a 10 (padrão 6.0)",
+                    "description": (
+                        "Cláusula WHERE do SQL (sem a palavra WHERE). "
+                        "Use AND para combinar filtros. "
+                        "Exemplos: "
+                        "\"media_type = 'movie' AND lower(genre_names) LIKE '%terror%'\", "
+                        "\"original_language = 'ko' AND year BETWEEN '2010' AND '2019'\", "
+                        "\"in_theaters = true AND media_type = 'movie'\", "
+                        "\"lower(streaming_providers) LIKE '%netflix%' AND vote_average >= 8.0\""
+                    ),
                 },
                 "limite": {
                     "type": "integer",
-                    "description": "Quantidade máxima de resultados (padrão 30)",
+                    "description": "Quantidade máxima de resultados (padrão 30, máximo 30)",
                 },
             },
+            "required": ["filtro_where"],
         },
     },
 }
+
+# Palavras-chave SQL proibidas na cláusula WHERE gerada pelo LLM.
+# O Athena é read-only por natureza, mas essa validação impede que o LLM
+# gere cláusulas malformadas ou que fujam do escopo de um filtro SELECT.
+_PALAVRAS_PROIBIDAS = re.compile(
+    r"\b(DROP|DELETE|INSERT|UPDATE|ALTER|CREATE|GRANT|TRUNCATE|EXEC|MERGE|REPLACE|CALL)\b",
+    re.IGNORECASE,
+)
+
+
+def _validar_where(filtro_where: str) -> str:
+    """Valida a cláusula WHERE gerada pelo LLM e retorna a string sanitizada.
+
+    Raises:
+        ValueError: se a cláusula contiver SQL proibido.
+    """
+    if ";" in filtro_where:
+        raise ValueError("Cláusula WHERE inválida: contém ';'")
+    if _PALAVRAS_PROIBIDAS.search(filtro_where):
+        raise ValueError("Cláusula WHERE inválida: contém palavra SQL proibida")
+    if re.search(r"\bSELECT\b", filtro_where, re.IGNORECASE):
+        raise ValueError("Cláusula WHERE inválida: contém subquery")
+    return filtro_where.strip()
 
 
 # ==============================================================================
 # PASSO 2: Consulta real no Athena
 # ==============================================================================
 
-def buscar_titulos_spec(
-    genero: str | None = None,
-    tipo: str | None = None,
-    ano: int | None = None,
-    nota_minima: float = 6.0,
-    limite: int = 30,
-) -> list[dict]:
+def buscar_titulos_spec(filtro_where: str, limite: int = 30) -> list[dict]:
     """
     Consulta a tabela SPEC no Athena e retorna os títulos que correspondem aos filtros.
 
-    Esta função é chamada com os argumentos que o GPT-4o escolheu no Passo 1.
-    Ela monta dinamicamente a query SQL com os filtros aplicados e executa no Athena.
-
-    FILTROS FIXOS (sempre aplicados):
-      - vote_count >= 50: exclui títulos com poucos votos (notas não são confiáveis)
-      - vote_average >= nota_minima: exclui títulos mal avaliados
-
-    FILTROS DINÂMICOS (aplicados quando o argumento não é None):
-      - media_type = tipo: "movie" ou "tv"
-      - year = ano: ano específico de lançamento
-      - lower(genre_names) LIKE lower('%genero%'): busca parcial no nome do gênero
-        (ex: "terror" encontra "Terror, Mistério")
+    O LLM gera a cláusula WHERE livremente com base no schema da tabela.
+    O filtro fixo vote_count >= 50 é sempre aplicado automaticamente para
+    garantir qualidade dos dados (exclui títulos com poucos votos).
 
     Args:
-        genero:      Gênero a filtrar (busca parcial, case-insensitive).
-        tipo:        "movie" ou "tv". None = ambos.
-        ano:         Ano de lançamento. None = todos os anos.
-        nota_minima: Nota mínima de 0 a 10. Padrão 6.0.
-        limite:      Máximo de títulos retornados. Padrão 30.
+        filtro_where: Cláusula WHERE gerada pelo LLM (sem a palavra WHERE).
+        limite:       Máximo de títulos retornados. Padrão 30.
 
     Returns:
         Lista de dicionários, cada um representando um título com todos os campos da SPEC.
     """
-    # Garante que limite está entre 1 e 30 — evita que o GPT cause queries gigantes no Athena
     limite = max(1, min(int(limite), 30))
+    filtro_where = _validar_where(filtro_where)
 
-    # Começa com os filtros que sempre devem ser aplicados
-    filtros = ["vote_count >= 50", f"vote_average >= {float(nota_minima)}"]
-
-    # Adiciona filtros opcionais apenas se o argumento foi fornecido pelo GPT
-    if tipo in ("movie", "tv"):
-        filtros.append(f"media_type = '{tipo}'")
-    if ano:
-        filtros.append(f"year = '{int(ano)}'")
-    if genero:
-        # Remove aspas simples para evitar injeção SQL (o usuário não controla isso,
-        # mas o GPT pode incluir aspas ao extrair o gênero do texto do usuário)
-        g = genero.replace("'", "")
-        # LIKE com % nas duas pontas: busca o gênero em qualquer posição
-        # lower() em ambos os lados: busca case-insensitive
-        filtros.append(f"lower(genre_names) LIKE lower('%{g}%')")
-
-    # Monta a query SQL com todos os filtros unidos por AND
     sql = f"""
         SELECT title, media_type, year, air_date, genre_names, overview,
                vote_average, poster_url, backdrop_url,
@@ -181,7 +161,7 @@ def buscar_titulos_spec(
                streaming_providers,
                in_theaters, theater_end_date
         FROM {os.getenv('SPEC_TABLE', 'tb_tmdb_discover_unified_prod')}
-        WHERE {" AND ".join(filtros)}
+        WHERE vote_count >= 50 AND {filtro_where}
         ORDER BY popularity DESC
         LIMIT {int(limite)}
     """
@@ -262,7 +242,37 @@ def recomendar(preferencia: str) -> list[dict]:
                 "role": "system",
                 "content": (
                     "Você é um assistente de recomendação de filmes e séries. "
-                    "Analise o pedido do usuário e chame a tool com os filtros adequados."
+                    "Analise o pedido do usuário e gere a cláusula WHERE do SQL para filtrar a tabela SPEC.\n\n"
+                    "SCHEMA DA TABELA SPEC (colunas disponíveis para filtro):\n"
+                    "- media_type (string): 'movie' ou 'tv'\n"
+                    "- title (string): título em português\n"
+                    "- original_title (string): título original (ex: 'The Shining', 'Parasita')\n"
+                    "- overview (string): sinopse do título. Use lower() + LIKE para buscar por palavra-chave.\n"
+                    "- original_language (string): código ISO 639-1 do idioma original (ex: 'en', 'ko', 'ja', 'pt', 'es', 'fr')\n"
+                    "- language_name (string): nome do idioma em inglês (ex: 'English', 'Korean', 'Japanese')\n"
+                    "- genre_names (string): gêneros separados por vírgula (ex: 'Terror, Drama'). Use lower() + LIKE para buscar.\n"
+                    "- year (string): ano de lançamento. Use BETWEEN para faixas, = para ano exato.\n"
+                    "- air_date (string): data de lançamento no formato 'YYYY-MM-DD'\n"
+                    "- vote_average (double): nota média de 0 a 10\n"
+                    "- vote_count (int): número de votos (filtro fixo >= 50 já aplicado; use para exigir mais votos)\n"
+                    "- popularity (double): score de popularidade do TMDB\n"
+                    "- origin_country (array<string>): códigos ISO 3166-1 do país de origem (ex: 'US', 'BR', 'KR'). Use contains() para filtrar.\n"
+                    "- origin_country_name (string): nome do país de origem (ex: 'Brasil', 'United States', '대한민국')\n"
+                    "- runtime_minutes (int): duração em minutos (apenas filmes, NULL para séries)\n"
+                    "- number_of_seasons (int): número de temporadas (apenas séries)\n"
+                    "- number_of_episodes (int): número de episódios (apenas séries)\n"
+                    "- episode_runtime_minutes (int): duração média por episódio em minutos (apenas séries)\n"
+                    "- streaming_providers (string): plataformas de streaming no Brasil (ex: 'Netflix, Amazon Prime Video'). Use lower() + LIKE.\n"
+                    "- in_theaters (boolean): true se está em cartaz nos cinemas\n"
+                    "- theater_start_date (string): data de estreia nos cinemas ('YYYY-MM-DD')\n"
+                    "- theater_end_date (string): data de saída dos cinemas ('YYYY-MM-DD')\n"
+                    "- adult (boolean): true se é conteúdo adulto\n\n"
+                    "REGRAS:\n"
+                    "- Gere APENAS a cláusula WHERE (sem a palavra WHERE), usando AND para combinar filtros.\n"
+                    "- Para textos, use lower() + LIKE: lower(genre_names) LIKE '%terror%'\n"
+                    "- Para idioma, use original_language com código ISO: original_language = 'ko' (coreano), 'ja' (japonês), 'en' (inglês), 'pt' (português)\n"
+                    "- Sempre inclua vote_average >= 6.0 salvo se o usuário pedir nota diferente.\n"
+                    "- Nunca use SELECT, INSERT, UPDATE, DELETE ou outros comandos — apenas expressões de filtro."
                 ),
             },
             {"role": "user", "content": preferencia},

@@ -34,18 +34,36 @@ O `conftest.py` não define fixtures pytest — apenas configura variáveis de a
 
 ## Casos de teste — `test_agent.py`
 
+### `TestValidarWhere` — Validação de segurança da cláusula WHERE
+
+| Teste | O que verifica |
+|---|---|
+| `test_aceita_clausula_valida` | Aceita e retorna cláusula WHERE válida sem alterações |
+| `test_rejeita_ponto_e_virgula` | Rejeita cláusulas com `;` (prevenção de statement injection) |
+| `test_rejeita_drop` | Rejeita cláusulas com `DROP` |
+| `test_rejeita_delete` | Rejeita cláusulas com `DELETE` |
+| `test_rejeita_insert` | Rejeita cláusulas com `INSERT` |
+| `test_rejeita_subquery_select` | Rejeita cláusulas com `SELECT` (prevenção de subquery) |
+| `test_remove_espacos_nas_pontas` | Remove espaços em branco nas extremidades da cláusula |
+
 ### `TestBuscarTitulosSpec` — Consulta ao Athena (Etapa 2)
 
 | Teste | O que verifica |
 |---|---|
 | `test_retorna_lista_vazia_sem_resultados` | Retorna `[]` quando Athena não encontra resultados |
 | `test_retorna_registros_como_lista_de_dicts` | Converte corretamente rows do Athena em lista de dicts |
-| `test_filtro_tipo_incluido_na_query` | WHERE inclui `media_type = 'movie'` quando `tipo` é passado |
-| `test_filtro_ano_incluido_na_query` | WHERE inclui `year = '1990'` quando `ano` é passado |
-| `test_filtro_genero_incluido_na_query` | WHERE inclui `genre_names LIKE '%Terror%'` quando `genero` é passado |
+| `test_filtro_where_incluido_na_query` | WHERE inclui a cláusula gerada pelo LLM na query |
+| `test_vote_count_fixo_sempre_presente` | Filtro fixo `vote_count >= 50` está sempre presente na query |
+| `test_filtro_idioma_na_query` | WHERE inclui `original_language = 'ko'` para filtro de idioma |
+| `test_filtro_duracao_na_query` | WHERE inclui `runtime_minutes <= 90` para filtro de duração |
+| `test_filtro_temporadas_na_query` | WHERE inclui `number_of_seasons = 1` para filtro de temporadas |
+| `test_filtro_em_cartaz_na_query` | WHERE inclui `in_theaters = true` para filtro de cinema |
+| `test_filtro_plataforma_na_query` | WHERE inclui `lower(streaming_providers) LIKE '%netflix%'` para filtro de streaming |
+| `test_filtro_faixa_de_ano_na_query` | WHERE inclui `year BETWEEN '2000' AND '2010'` para faixa de ano |
 | `test_limite_aplicado_na_query` | LIMIT na query reflete o parâmetro `limite` |
 | `test_limite_e_limitado_ao_maximo_de_30` | Limita a `LIMIT 30` mesmo se `limite=100` for passado |
 | `test_limite_minimo_e_1` | Usa `LIMIT 1` quando `limite=0` for passado |
+| `test_rejeita_where_com_sql_perigoso` | Levanta `ValueError` quando a cláusula WHERE contém SQL perigoso |
 
 ### `TestRecomendar` — Fluxo completo de recomendação
 
@@ -56,7 +74,7 @@ O `conftest.py` não define fixtures pytest — apenas configura variáveis de a
 | `test_retorna_lista_de_titulos` | Resultado final é lista de dicts com campos corretos |
 | `test_remove_markdown_code_block_do_json` | Remove ` ```json ... ``` ` antes de parsear a resposta do LLM |
 | `test_retorna_lista_vazia_se_llm_retorna_string_vazia` | Retorna `[]` sem erro quando o LLM retorna string vazia na etapa 3 |
-| `test_passa_filtros_extraidos_pelo_llm_para_athena` | Filtros extraídos na etapa 1 são passados corretamente para `buscar_titulos_spec()` |
+| `test_passa_filtros_extraidos_pelo_llm_para_athena` | `filtro_where` e `limite` extraídos na etapa 1 são passados corretamente para `buscar_titulos_spec()` |
 | `test_retorna_lista_vazia_se_llm_nao_chama_tool` | Retorna `[]` sem chamar Athena quando o LLM não retorna `tool_calls` (ex: modelo incompatível com `tool_choice="required"`) |
 | `test_retorna_data_lancamento_formatada` | Campo `data_lancamento` está presente na resposta final |
 
