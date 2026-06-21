@@ -6,6 +6,8 @@
 # o LLM duas vezes: 1ª para extrair filtros como JSON, 2ª para formatar respostas.
 
 import json
+
+import pytest
 from unittest.mock import MagicMock, patch
 
 import agent
@@ -122,52 +124,125 @@ def _mock_litellm(tool_args: dict, resposta_final: str):
     return [passo1, passo3]
 
 
+class TestValidarWhere:
+
+    def test_aceita_clausula_valida(self):
+        resultado = agent._validar_where("media_type = 'movie' AND vote_average >= 7.0")
+        assert resultado == "media_type = 'movie' AND vote_average >= 7.0"
+
+    def test_rejeita_ponto_e_virgula(self):
+        with pytest.raises(ValueError, match="contém ';'"):
+            agent._validar_where("media_type = 'movie'; DROP TABLE x")
+
+    def test_rejeita_drop(self):
+        with pytest.raises(ValueError, match="palavra SQL proibida"):
+            agent._validar_where("DROP TABLE spec")
+
+    def test_rejeita_delete(self):
+        with pytest.raises(ValueError, match="palavra SQL proibida"):
+            agent._validar_where("DELETE FROM spec WHERE 1=1")
+
+    def test_rejeita_insert(self):
+        with pytest.raises(ValueError, match="palavra SQL proibida"):
+            agent._validar_where("1=1 INSERT INTO spec VALUES (1)")
+
+    def test_rejeita_subquery_select(self):
+        with pytest.raises(ValueError, match="contém subquery"):
+            agent._validar_where("id IN (SELECT id FROM outra_tabela)")
+
+    def test_remove_espacos_nas_pontas(self):
+        resultado = agent._validar_where("  media_type = 'movie'  ")
+        assert resultado == "media_type = 'movie'"
+
+
 class TestBuscarTitulosSpec:
 
     def test_retorna_lista_vazia_sem_resultados(self):
         with patch("agent.boto3") as mock_boto3:
             _setup_athena_mock(mock_boto3)
-            resultado = agent.buscar_titulos_spec()
+            resultado = agent.buscar_titulos_spec("vote_average >= 6.0")
 
         assert resultado == []
 
     def test_retorna_registros_como_lista_de_dicts(self):
         with patch("agent.boto3") as mock_boto3:
             _setup_athena_mock(mock_boto3, rows_data=[TITULO_FAKE])
-            resultado = agent.buscar_titulos_spec()
+            resultado = agent.buscar_titulos_spec("vote_average >= 6.0")
 
         assert isinstance(resultado, list)
         assert len(resultado) == 1
         assert resultado[0]["title"] == "O Iluminado"
 
-    def test_filtro_tipo_incluido_na_query(self):
+    def test_filtro_where_incluido_na_query(self):
+        filtro = "media_type = 'movie' AND lower(genre_names) LIKE '%terror%'"
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(tipo="movie")
+            agent.buscar_titulos_spec(filtro)
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
         assert "media_type = 'movie'" in sql_executado
+        assert "lower(genre_names) LIKE '%terror%'" in sql_executado
 
-    def test_filtro_ano_incluido_na_query(self):
+    def test_vote_count_fixo_sempre_presente(self):
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(ano=1990)
+            agent.buscar_titulos_spec("media_type = 'movie'")
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
-        assert "year = '1990'" in sql_executado
+        assert "vote_count >= 50" in sql_executado
 
-    def test_filtro_genero_incluido_na_query(self):
+    def test_filtro_idioma_na_query(self):
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(genero="Terror")
+            agent.buscar_titulos_spec("original_language = 'ko'")
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
-        assert "Terror" in sql_executado
+        assert "original_language = 'ko'" in sql_executado
+
+    def test_filtro_duracao_na_query(self):
+        with patch("agent.boto3") as mock_boto3:
+            mock_athena = _setup_athena_mock(mock_boto3)
+            agent.buscar_titulos_spec("runtime_minutes <= 90 AND media_type = 'movie'")
+
+        sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
+        assert "runtime_minutes <= 90" in sql_executado
+
+    def test_filtro_temporadas_na_query(self):
+        with patch("agent.boto3") as mock_boto3:
+            mock_athena = _setup_athena_mock(mock_boto3)
+            agent.buscar_titulos_spec("number_of_seasons = 1 AND media_type = 'tv'")
+
+        sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
+        assert "number_of_seasons = 1" in sql_executado
+
+    def test_filtro_em_cartaz_na_query(self):
+        with patch("agent.boto3") as mock_boto3:
+            mock_athena = _setup_athena_mock(mock_boto3)
+            agent.buscar_titulos_spec("in_theaters = true AND media_type = 'movie'")
+
+        sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
+        assert "in_theaters = true" in sql_executado
+
+    def test_filtro_plataforma_na_query(self):
+        with patch("agent.boto3") as mock_boto3:
+            mock_athena = _setup_athena_mock(mock_boto3)
+            agent.buscar_titulos_spec("lower(streaming_providers) LIKE '%netflix%'")
+
+        sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
+        assert "lower(streaming_providers) LIKE '%netflix%'" in sql_executado
+
+    def test_filtro_faixa_de_ano_na_query(self):
+        with patch("agent.boto3") as mock_boto3:
+            mock_athena = _setup_athena_mock(mock_boto3)
+            agent.buscar_titulos_spec("year BETWEEN '2000' AND '2010'")
+
+        sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
+        assert "year BETWEEN '2000' AND '2010'" in sql_executado
 
     def test_limite_aplicado_na_query(self):
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(limite=10)
+            agent.buscar_titulos_spec("vote_average >= 6.0", limite=10)
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
         assert "LIMIT 10" in sql_executado
@@ -175,7 +250,7 @@ class TestBuscarTitulosSpec:
     def test_limite_e_limitado_ao_maximo_de_30(self):
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(limite=100)
+            agent.buscar_titulos_spec("vote_average >= 6.0", limite=100)
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
         assert "LIMIT 30" in sql_executado
@@ -184,10 +259,14 @@ class TestBuscarTitulosSpec:
     def test_limite_minimo_e_1(self):
         with patch("agent.boto3") as mock_boto3:
             mock_athena = _setup_athena_mock(mock_boto3)
-            agent.buscar_titulos_spec(limite=0)
+            agent.buscar_titulos_spec("vote_average >= 6.0", limite=0)
 
         sql_executado = mock_athena.start_query_execution.call_args.kwargs["QueryString"]
         assert "LIMIT 1" in sql_executado
+
+    def test_rejeita_where_com_sql_perigoso(self):
+        with pytest.raises(ValueError):
+            agent.buscar_titulos_spec("1=1; DROP TABLE spec")
 
 
 class TestRecomendar:
@@ -197,7 +276,9 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, "")
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, ""
+            )
             resultado = agent.recomendar("filmes de terror")
 
         assert resultado == []
@@ -207,7 +288,9 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, RESPOSTA_LLM_FAKE)
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, RESPOSTA_LLM_FAKE
+            )
             agent.recomendar("filmes de terror")
 
         assert mock_completion.call_count == 2
@@ -217,7 +300,9 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, RESPOSTA_LLM_FAKE)
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, RESPOSTA_LLM_FAKE
+            )
             resultado = agent.recomendar("filmes de terror")
 
         assert isinstance(resultado, list)
@@ -230,7 +315,9 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, resposta_com_markdown)
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, resposta_com_markdown
+            )
             resultado = agent.recomendar("filmes de terror")
 
         assert len(resultado) == 1
@@ -240,13 +327,18 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, "")
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, ""
+            )
             resultado = agent.recomendar("filmes de terror")
 
         assert resultado == []
 
     def test_passa_filtros_extraidos_pelo_llm_para_athena(self):
-        filtros = {"tipo": "movie", "genero": "Terror", "ano": 1980, "nota_minima": 7.0, "limite": 5}
+        filtros = {
+            "filtro_where": "media_type = 'movie' AND lower(genre_names) LIKE '%terror%' AND vote_average >= 7.0",
+            "limite": 5,
+        }
         with (
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]) as mock_buscar,
             patch("agent.litellm.completion") as mock_completion,
@@ -278,7 +370,9 @@ class TestRecomendar:
             patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
             patch("agent.litellm.completion") as mock_completion,
         ):
-            mock_completion.side_effect = _mock_litellm({"tipo": "movie"}, RESPOSTA_LLM_FAKE)
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, RESPOSTA_LLM_FAKE
+            )
             resultado = agent.recomendar("filmes de terror")
 
         assert "data_lancamento" in resultado[0]
