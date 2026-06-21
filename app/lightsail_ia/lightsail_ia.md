@@ -12,20 +12,18 @@ Permite que qualquer pessoa consuma os dados do pipeline sem precisar escrever S
 
 O processo de recomendação é dividido em três etapas encadeadas:
 
-### Etapa 1 — Extração de filtros (LLM + Function Calling)
-O LLM recebe o texto do usuário e usa *Function Calling* para retornar um JSON estruturado com os filtros extraídos:
+### Etapa 1 — Geração da cláusula WHERE (LLM + Function Calling)
+O LLM recebe o texto do usuário e o schema completo da tabela SPEC. Usando *Function Calling*, gera a cláusula WHERE do SQL livremente, combinando qualquer coluna disponível:
 ```json
 {
-  "genero": "Terror",
-  "tipo": "movie",
-  "ano": 1990,
-  "nota_minima": 7.0,
+  "filtro_where": "media_type = 'movie' AND original_language = 'ko' AND lower(genre_names) LIKE '%terror%' AND vote_average >= 7.0",
   "limite": 10
 }
 ```
+Essa abordagem "livre" permite que qualquer combinação de filtros seja usada sem precisar mapear cada pergunta possível no código (ex: idioma, duração, país de origem, temporadas, plataforma de streaming, em cartaz).
 
 ### Etapa 2 — Consulta ao Athena
-Com os filtros extraídos, monta e executa uma query SQL dinâmica na tabela `tb_tmdb_discover_unified_{env}` (camada SPEC). Filtra por `vote_count ≥ 50`, `vote_average ≥ nota_minima`, `media_type`, `year` e `genre_names LIKE`.
+A cláusula WHERE gerada pelo LLM é validada (`_validar_where()` bloqueia SQL perigoso como DROP, DELETE, INSERT, subqueries) e executada na tabela `tb_tmdb_discover_unified_{env}` (camada SPEC). O filtro fixo `vote_count ≥ 50` é sempre aplicado automaticamente.
 
 ### Etapa 3 — Formatação das recomendações (LLM)
 O LLM recebe os resultados reais do Athena e formata como JSON com campos amigáveis:
@@ -64,8 +62,9 @@ O LLM recebe os resultados reais do Athena e formata como JSON com campos amigá
 
 | Arquivo | Função | Responsabilidade |
 |---|---|---|
-| `agent.py` | `recomendar(user_input)` | Orquestra as 3 etapas: extrair filtros → consultar → formatar |
-| `agent.py` | `buscar_titulos_spec(filtros)` | Executa query SQL no Athena com filtros dinâmicos |
+| `agent.py` | `recomendar(user_input)` | Orquestra as 3 etapas: gerar WHERE → consultar → formatar |
+| `agent.py` | `buscar_titulos_spec(filtro_where, limite)` | Valida o WHERE gerado pelo LLM e executa query SQL no Athena |
+| `agent.py` | `_validar_where(filtro_where)` | Valida a cláusula WHERE contra SQL perigoso (DROP, DELETE, INSERT, subqueries) |
 | `agent.py` | `limpar_duracao(raw)` | Formata string de duração para exibição nos cards (ex: "120 min", "3 temporadas") |
 | `app.py` | Interface Streamlit | Renderiza cards, gerencia estado e exibe resultados |
 
