@@ -43,7 +43,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import date
 
 import streamlit as st
-from agent import limpar_duracao, recomendar
+from agent import limpar_duracao, recomendar  # noqa: F401
 
 _executor = ThreadPoolExecutor(max_workers=2)
 
