@@ -465,7 +465,13 @@ def recomendar(preferencia: str) -> list[dict]:
             reg["motivo"] = ""
         return registros_formatados
 
-    dados = json.loads(conteudo)
+    try:
+        dados = json.loads(conteudo)
+    except json.JSONDecodeError:
+        for reg in registros_formatados:
+            reg["motivo"] = ""
+        return registros_formatados
+
     motivos_llm = dados.get("titulos", [])
 
     # Merge: adiciona o motivo do LLM ao registro já formatado pelo Python
