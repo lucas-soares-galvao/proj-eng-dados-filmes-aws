@@ -2,7 +2,7 @@
 
 ## O que é testado
 
-Testa as funções de `app/lightsail_ia/agent.py`: `recomendar()`, `buscar_titulos_spec()` e `limpar_duracao()`. Os testes usam estilo **pytest** (classes simples, `assert` nativo, `with patch(...)` como context manager). Verifica as três etapas do pipeline de recomendação: extração de filtros via LLM, consulta ao Athena e formatação das recomendações. A interface Streamlit (`app.py`) não é testada diretamente — é validada via execução manual. Todas as chamadas externas (LLM e Athena) são substituídas por **mocks** via `unittest.mock` — objetos falsos que simulam respostas do LLM e do banco de dados sem fazer chamadas reais, evitando custos de API e tornando os testes determinísticos.
+Testa as funções de `app/lightsail_ia/agent.py`: `recomendar()`, `buscar_titulos_spec()`, funções de formatação (`_formatar_registro`, `_formatar_tipo`, `_formatar_generos`, `_formatar_duracao_titulo`, `_formatar_data_lancamento`, `_formatar_theater_end_date`, `_formatar_nota`) e `limpar_duracao()`. Os testes usam estilo **pytest** (classes simples, `assert` nativo, `with patch(...)` como context manager). Verifica as etapas do pipeline de recomendação: extração de filtros via LLM, consulta ao Athena, formatação determinística via Python e geração de motivo pelo LLM. A interface Streamlit (`app.py`) não é testada diretamente — é validada via execução manual. Todas as chamadas externas (LLM e Athena) são substituídas por **mocks** via `unittest.mock` — objetos falsos que simulam respostas do LLM e do banco de dados sem fazer chamadas reais, evitando custos de API e tornando os testes determinísticos.
 
 ## Estrutura
 
@@ -30,7 +30,7 @@ O `conftest.py` não define fixtures pytest — apenas configura variáveis de a
 | Função | Descrição |
 |---|---|
 | `_setup_athena_mock(mock_boto3, rows_data)` | Configura o mock do `boto3` para simular as 3 etapas da API nativa do Athena: `start_query_execution` → `get_query_execution` (polling) → `get_paginator().paginate()`. `rows_data` define as linhas de resultado; `None` retorna apenas o header (resultado vazio). |
-| `_mock_litellm(tool_args, resposta_final)` | Retorna lista de 2 respostas para `side_effect` de `litellm.completion`: a 1ª simula a resposta da Etapa 1 (Function Calling com `tool_args`), a 2ª simula a Etapa 3 (texto JSON com recomendações). |
+| `_mock_litellm(tool_args, resposta_final)` | Retorna lista de 2 respostas para `side_effect` de `litellm.completion`: a 1ª simula a resposta da Etapa 1 (Function Calling com `tool_args`), a 2ª simula a Etapa 3 (JSON com `id` e `motivo` por título). |
 
 ## Casos de teste — `test_agent.py`
 
@@ -61,7 +61,7 @@ O `conftest.py` não define fixtures pytest — apenas configura variáveis de a
 | `test_filtro_plataforma_na_query` | WHERE inclui `lower(streaming_providers) LIKE '%netflix%'` para filtro de streaming |
 | `test_filtro_faixa_de_ano_na_query` | WHERE inclui `year BETWEEN '2000' AND '2010'` para faixa de ano |
 | `test_limite_aplicado_na_query` | LIMIT na query reflete o parâmetro `limite` |
-| `test_limite_e_limitado_ao_maximo_de_30` | Limita a `LIMIT 30` mesmo se `limite=100` for passado |
+| `test_limite_e_limitado_ao_maximo_de_10` | Limita a `LIMIT 10` mesmo se `limite=100` for passado |
 | `test_limite_minimo_e_1` | Usa `LIMIT 1` quando `limite=0` for passado |
 | `test_rejeita_where_com_sql_perigoso` | Levanta `ValueError` quando a cláusula WHERE contém SQL perigoso |
 
@@ -73,14 +73,15 @@ O `conftest.py` não define fixtures pytest — apenas configura variáveis de a
 | `test_chama_llm_duas_vezes` | `litellm.completion` é chamado exatamente 2 vezes (etapas 1 e 3) |
 | `test_retorna_lista_de_titulos` | Resultado final é lista de dicts com campos corretos |
 | `test_remove_markdown_code_block_do_json` | Remove ` ```json ... ``` ` antes de parsear a resposta do LLM |
-| `test_retorna_lista_vazia_se_llm_retorna_string_vazia` | Retorna `[]` sem erro quando o LLM retorna string vazia na etapa 3 |
+| `test_retorna_registros_sem_motivo_se_llm_retorna_string_vazia` | Retorna registros formatados com `motivo=""` quando o LLM retorna string vazia na etapa 3 |
 | `test_passa_filtros_extraidos_pelo_llm_para_athena` | `filtro_where` e `limite` extraídos na etapa 1 são passados corretamente para `buscar_titulos_spec()` |
 | `test_retorna_lista_vazia_se_llm_nao_chama_tool` | Retorna `[]` sem chamar Athena quando o LLM não retorna `tool_calls` (ex: modelo não escolhe usar a tool) |
-| `test_retorna_data_lancamento_formatada` | Campo `data_lancamento` está presente na resposta final |
+| `test_retorna_data_lancamento_formatada` | Campo `data_lancamento` formatado pelo Python (ex: `"Maio de 1980"`) |
+| `test_campos_formatados_pelo_python` | Valida que todos os campos determinísticos são formatados corretamente pelo Python (`tipo`, `ano`, `generos`, `sinopse`, `nota`, `duracao`, `streaming_providers`, `in_theaters`, `motivo`) |
 
-### `TestLimparDuracao` — Limpeza de strings de duração
+### `TestLimparDuracao` — Limpeza de strings de duração (legado)
 
-Testa a função `limpar_duracao()` que remove fragmentos `~null` gerados pelo LLM quando campos de duração são nulos. Não usa mocks — são testes puramente unitários sobre manipulação de strings.
+Testa a função `limpar_duracao()` que remove fragmentos `~null` gerados pelo LLM quando campos de duração são nulos. Função mantida por compatibilidade com `app.py`, mas novas durações são formatadas por `_formatar_duracao_titulo()`. Não usa mocks — são testes puramente unitários sobre manipulação de strings.
 
 | Teste | O que verifica |
 |---|---|
@@ -92,6 +93,67 @@ Testa a função `limpar_duracao()` que remove fragmentos `~null` gerados pelo L
 | `test_preserva_duracao_normal` | `"2h 26min"` preservado intacto |
 | `test_preserva_duracao_composta` | `"3 temporadas · 36 eps · 45min"` preservado intacto |
 | `test_remove_separadores_vazios` | `" · 36 eps · "` → `"36 eps"` |
+
+### `TestFormatarTipo` — Conversão de `media_type`
+
+| Teste | O que verifica |
+|---|---|
+| `test_movie_para_filme` | `"movie"` → `"filme"` |
+| `test_tv_para_serie` | `"tv"` → `"série"` |
+| `test_valor_desconhecido` | Valor desconhecido retornado sem alteração |
+
+### `TestFormatarGeneros` — Separação de gêneros
+
+| Teste | O que verifica |
+|---|---|
+| `test_separa_por_virgula` | `"Terror, Drama"` → `["Terror", "Drama"]` |
+| `test_retorna_lista_vazia_para_none` | `None` → `[]` |
+| `test_retorna_lista_vazia_para_string_vazia` | `""` → `[]` |
+
+### `TestFormatarDuracaoTitulo` — Formatação de duração
+
+| Teste | O que verifica |
+|---|---|
+| `test_filme_com_duracao` | `146` min → `"2h 26min"` |
+| `test_filme_sem_duracao` | `runtime_minutes=None` → `None` |
+| `test_filme_menos_de_uma_hora` | `45` min → `"45min"` (sem horas) |
+| `test_serie_completa` | Seasons + episodes + ep. runtime → `"3 temporadas · 36 eps · ~45 min/ep"` |
+| `test_serie_sem_episode_runtime` | Omite parte de runtime → `"2 temporadas · 20 eps"` |
+| `test_serie_uma_temporada` | Singular → `"1 temporada · 10 eps"` |
+| `test_serie_sem_dados` | Todos os campos `None` → `None` |
+
+### `TestFormatarDataLancamento` — Formatação de data
+
+| Teste | O que verifica |
+|---|---|
+| `test_data_valida` | `"1980-05-23"` → `"Maio de 1980"` |
+| `test_data_none` | `None` → `None` |
+| `test_data_vazia` | `""` → `None` |
+| `test_data_curta` | `"1980"` (sem mês) → `None` |
+
+### `TestFormatarTheaterEndDate` — Formatação de data de saída do cinema
+
+| Teste | O que verifica |
+|---|---|
+| `test_em_cartaz_com_data` | `"2025-07-15"` + `in_theaters=True` → `"15/07/2025"` |
+| `test_fora_de_cartaz` | `in_theaters=False` → `None` |
+| `test_em_cartaz_sem_data` | `theater_end_date=None` → `None` |
+
+### `TestFormatarNota` — Conversão de nota
+
+| Teste | O que verifica |
+|---|---|
+| `test_float_valido` | `8.4` → `8.4` |
+| `test_string_valida` | `"7.5"` → `7.5` |
+| `test_none` | `None` → `None` |
+| `test_string_vazia` | `""` → `None` |
+
+### `TestFormatarRegistro` — Formatação completa de um registro
+
+| Teste | O que verifica |
+|---|---|
+| `test_registro_completo_filme` | Registro de filme formatado com todos os campos corretos |
+| `test_registro_serie` | Registro de série com `tipo="série"` e duração formatada com temporadas |
 
 ## Como executar
 
@@ -118,8 +180,3 @@ streamlit run app.py
 
 A variável `CLOUDWATCH_LOG_GROUP` não é definida no conftest — isso é intencional: sem ela, o handler watchtower não é ativado e os testes rodam sem dependência do CloudWatch.
 
-## Lacuna de cobertura — `in_theaters` e `theater_end_date`
-
-O SELECT real em `agent.py` inclui `in_theaters` e `theater_end_date` nas colunas consultadas ao Athena. No entanto, o fixture `COLUMNS` em `test_agent.py` **não inclui** essas duas colunas, e o dicionário `TITULO_FAKE` e o JSON `RESPOSTA_LLM_FAKE` também não as contêm.
-
-Consequência: os testes exercitam o fluxo completo mas **não verificam** que `in_theaters` e `theater_end_date` são corretamente retornados pela query e processados pelo agente. Para cobrir esse comportamento seria necessário adicionar as colunas ao `COLUMNS`, incluir os campos em `TITULO_FAKE` e adicionar testes específicos (análogos ao `test_retorna_data_lancamento_formatada`).

@@ -20,22 +20,24 @@ O LLM recebe o texto do usuário e o schema completo da tabela SPEC. Usando *Fun
   "limite": 10
 }
 ```
-Essa abordagem "livre" permite que qualquer combinação de filtros seja usada sem precisar mapear cada pergunta possível no código (ex: idioma, duração, país de origem, temporadas, plataforma de streaming, em cartaz).
+Essa abordagem "livre" permite que qualquer combinação de filtros seja usada sem precisar mapear cada pergunta possível no código (ex: idioma, duração, país de origem, temporadas, plataforma de streaming, em cartaz). O limite máximo de resultados é 10.
 
 ### Etapa 2 — Consulta ao Athena
 A cláusula WHERE gerada pelo LLM é validada (`_validar_where()` bloqueia SQL perigoso como DROP, DELETE, INSERT, subqueries) e executada na tabela `tb_tmdb_discover_unified_{env}` (camada SPEC). O filtro fixo `vote_count ≥ 50` é sempre aplicado automaticamente.
 
-### Etapa 3 — Formatação das recomendações (LLM)
-O LLM recebe os resultados reais do Athena e formata como JSON com campos amigáveis:
-- `titulo`, `tipo`, `ano`, `generos`
-- `sinopse` (traduzida para português quando necessário)
-- `nota`, `poster_url`, `backdrop_url`
-- `motivo` (por que este título foi recomendado)
-- `duracao` (runtime para filmes; temporadas/episódios/duração de ep. para séries; `null` se ausente)
-- `data_lancamento` (mês por extenso + ano em PT derivado de `air_date`, ex: `"Julho 2025"`; `null` se ausente)
-- `streaming_providers` (onde assistir no Brasil — string com serviços separados por vírgula, ou `null`)
-- `in_theaters` (boolean — `true` se o filme estiver atualmente em cartaz nos cinemas)
-- `theater_end_date` (string `DD/MM/YYYY` com a data de encerramento no cinema, ou `null`)
+### Etapa 2.5 — Formatação determinística (Python)
+Após o Athena retornar os resultados brutos, funções Python (`_formatar_registro()`) convertem cada registro em campos prontos para o card da interface, sem usar LLM:
+- `titulo` (cópia de `title`), `tipo` (`"movie"` → `"filme"`, `"tv"` → `"série"`)
+- `ano` (inteiro), `generos` (lista de strings a partir de `genre_names`)
+- `sinopse` (cópia de `overview` — já vem em pt-BR do pipeline via `COALESCE(overview, overview_pt, overview_en)`)
+- `nota` (float), `poster_url`, `backdrop_url`
+- `duracao` (runtime formatado para filmes: `"2h 26min"`; temporadas/episódios para séries: `"3 temporadas · 36 eps · ~45 min/ep"`)
+- `data_lancamento` (mês por extenso + ano em PT derivado de `air_date`, ex: `"Maio de 1980"`)
+- `streaming_providers` (cópia direta — onde assistir no Brasil)
+- `in_theaters` (boolean), `theater_end_date` (string `DD/MM/YYYY` ou `null`)
+
+### Etapa 3 — Geração do motivo (LLM)
+O LLM recebe apenas os campos essenciais de cada título (`id`, `title`, `overview`, `genre_names`, `year`, `vote_average`) e gera um `motivo` curto (1-2 frases) explicando por que cada título é relevante para o pedido do usuário. Retorna JSON com apenas `id` e `motivo` por título, que é mesclado ao registro já formatado pelo Python.
 
 ### Interface (`app.py`)
 - Tema escuro com CSS customizado
@@ -64,10 +66,11 @@ O LLM recebe os resultados reais do Athena e formata como JSON com campos amigá
 
 | Arquivo | Função | Responsabilidade |
 |---|---|---|
-| `agent.py` | `recomendar(user_input)` | Orquestra as 3 etapas: gerar WHERE → consultar → formatar |
-| `agent.py` | `buscar_titulos_spec(filtro_where, limite)` | Valida o WHERE gerado pelo LLM e executa query SQL no Athena |
+| `agent.py` | `recomendar(user_input)` | Orquestra as etapas: gerar WHERE → consultar → formatar (Python) → gerar motivo (LLM) |
+| `agent.py` | `buscar_titulos_spec(filtro_where, limite)` | Valida o WHERE gerado pelo LLM e executa query SQL no Athena (limite máximo: 10) |
 | `agent.py` | `_validar_where(filtro_where)` | Valida a cláusula WHERE contra SQL perigoso (DROP, DELETE, INSERT, subqueries) |
-| `agent.py` | `limpar_duracao(raw)` | Formata string de duração para exibição nos cards (ex: "120 min", "3 temporadas") |
+| `agent.py` | `_formatar_registro(registro)` | Converte um registro bruto do Athena em dict formatado para o card (tipo, gêneros, duração, data, nota, etc.) |
+| `agent.py` | `limpar_duracao(raw)` | Remove fragmentos `~null` de strings de duração (legado — novas durações são formatadas por `_formatar_duracao_titulo`) |
 | `app.py` | Interface Streamlit | Orquestra a UI: autenticação, busca assíncrona e exibição de resultados |
 | `componentes.py` | `carregar_css()`, `renderizar_card()`, `renderizar_grid()`, `renderizar_rodape()` | Helpers de renderização HTML com escape contra XSS |
 | `static/estilos.css` | CSS consolidado | Estilos do login e página principal (grid, cards, responsivo) |
