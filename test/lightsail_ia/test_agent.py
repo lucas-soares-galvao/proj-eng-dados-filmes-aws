@@ -329,6 +329,20 @@ class TestRecomendar:
         assert resultado[0]["titulo"] == "O Iluminado"
         assert resultado[0]["motivo"] == ""
 
+    def test_retorna_registros_sem_motivo_se_llm_retorna_json_invalido(self):
+        with (
+            patch("agent.buscar_titulos_spec", return_value=[TITULO_FAKE]),
+            patch("agent.litellm.completion") as mock_completion,
+        ):
+            mock_completion.side_effect = _mock_litellm(
+                {"filtro_where": "media_type = 'movie'"}, "isso nao e json"
+            )
+            resultado = agent.recomendar("filmes de terror")
+
+        assert len(resultado) == 1
+        assert resultado[0]["titulo"] == "O Iluminado"
+        assert resultado[0]["motivo"] == ""
+
     def test_passa_filtros_extraidos_pelo_llm_para_athena(self):
         filtros = {
             "filtro_where": "media_type = 'movie' AND lower(genre_names) LIKE '%terror%' AND vote_average >= 7.0",
