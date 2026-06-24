@@ -102,7 +102,7 @@ TOOL = {
                 },
                 "limite": {
                     "type": "integer",
-                    "description": "Quantidade máxima de resultados (padrão 30, máximo 30)",
+                    "description": "Quantidade máxima de resultados (padrão 10, máximo 10)",
                 },
             },
             "required": ["filtro_where"],
@@ -135,10 +135,106 @@ def _validar_where(filtro_where: str) -> str:
 
 
 # ==============================================================================
+# FORMATAÇÃO DETERMINÍSTICA (Python puro, sem LLM)
+# ==============================================================================
+
+_MESES = {
+    1: "Janeiro", 2: "Fevereiro", 3: "Março", 4: "Abril",
+    5: "Maio", 6: "Junho", 7: "Julho", 8: "Agosto",
+    9: "Setembro", 10: "Outubro", 11: "Novembro", 12: "Dezembro",
+}
+
+
+def _formatar_tipo(media_type: str) -> str:
+    return "filme" if media_type == "movie" else "série" if media_type == "tv" else media_type
+
+
+def _formatar_generos(genre_names: str | None) -> list[str]:
+    if not genre_names:
+        return []
+    return [g.strip() for g in genre_names.split(",") if g.strip()]
+
+
+def _formatar_duracao_titulo(registro: dict) -> str | None:
+    if registro.get("media_type") == "movie":
+        raw = registro.get("runtime_minutes")
+        if not raw:
+            return None
+        minutos = int(raw)
+        horas, resto = divmod(minutos, 60)
+        return f"{horas}h {resto}min" if horas else f"{resto}min"
+
+    partes = []
+    seasons = registro.get("number_of_seasons")
+    episodes = registro.get("number_of_episodes")
+    ep_runtime = registro.get("episode_runtime_minutes")
+    if seasons:
+        n = int(seasons)
+        partes.append(f"{n} temporada{'s' if n != 1 else ''}")
+    if episodes:
+        partes.append(f"{int(episodes)} eps")
+    if ep_runtime:
+        partes.append(f"~{int(ep_runtime)} min/ep")
+    return " · ".join(partes) if partes else None
+
+
+def _formatar_data_lancamento(air_date: str | None) -> str | None:
+    if not air_date or len(air_date) < 7:
+        return None
+    try:
+        partes = air_date.split("-")
+        ano = int(partes[0])
+        mes = int(partes[1])
+        return f"{_MESES[mes]} de {ano}"
+    except (ValueError, KeyError, IndexError):
+        return None
+
+
+def _formatar_theater_end_date(theater_end_date: str | None, in_theaters: bool) -> str | None:
+    if not in_theaters or not theater_end_date:
+        return None
+    try:
+        ano, mes, dia = theater_end_date.split("-")
+        return f"{dia}/{mes}/{ano}"
+    except ValueError:
+        return None
+
+
+def _formatar_nota(vote_average) -> float | None:
+    if vote_average is None or vote_average == "":
+        return None
+    try:
+        return float(vote_average)
+    except (ValueError, TypeError):
+        return None
+
+
+def _formatar_registro(registro: dict) -> dict:
+    in_theaters = str(registro.get("in_theaters", "")).lower() == "true"
+    return {
+        "titulo": registro.get("title", ""),
+        "tipo": _formatar_tipo(registro.get("media_type", "")),
+        "ano": int(registro["year"]) if registro.get("year") else None,
+        "generos": _formatar_generos(registro.get("genre_names")),
+        "sinopse": registro.get("overview") or "",
+        "nota": _formatar_nota(registro.get("vote_average")),
+        "poster_url": registro.get("poster_url") or None,
+        "backdrop_url": registro.get("backdrop_url") or None,
+        "duracao": _formatar_duracao_titulo(registro),
+        "data_lancamento": _formatar_data_lancamento(registro.get("air_date")),
+        "streaming_providers": registro.get("streaming_providers") or None,
+        "in_theaters": in_theaters,
+        "theater_end_date": _formatar_theater_end_date(
+            registro.get("theater_end_date"), in_theaters
+        ),
+    }
+
+
+# ==============================================================================
 # PASSO 2: Consulta real no Athena
 # ==============================================================================
 
-def buscar_titulos_spec(filtro_where: str, limite: int = 30) -> list[dict]:
+def buscar_titulos_spec(filtro_where: str, limite: int = 10) -> list[dict]:
     """
     Consulta a tabela SPEC no Athena e retorna os títulos que correspondem aos filtros.
 
@@ -148,12 +244,12 @@ def buscar_titulos_spec(filtro_where: str, limite: int = 30) -> list[dict]:
 
     Args:
         filtro_where: Cláusula WHERE gerada pelo LLM (sem a palavra WHERE).
-        limite:       Máximo de títulos retornados. Padrão 30.
+        limite:       Máximo de títulos retornados. Padrão 10.
 
     Returns:
         Lista de dicionários, cada um representando um título com todos os campos da SPEC.
     """
-    limite = max(1, min(int(limite), 30))
+    limite = max(1, min(int(limite), 10))
     filtro_where = _validar_where(filtro_where)
 
     sql = f"""
@@ -298,15 +394,26 @@ def recomendar(preferencia: str) -> list[dict]:
     if not titulos_da_spec:
         return []  # nenhum título encontrado com esses filtros
 
+    # Formata todos os campos determinísticos via Python (instantâneo)
+    registros_formatados = [_formatar_registro(r) for r in titulos_da_spec]
+
     # ------------------------------------------------------------------
-    # PASSO 3: LLM formata os títulos reais como recomendações
+    # PASSO 3: LLM gera apenas o "motivo" de cada recomendação
     # ------------------------------------------------------------------
-    # A conversa é reconstruída com o histórico completo para o modelo entender o contexto:
-    #   system → mensagem do usuário → resposta anterior do modelo (com tool_call) → resultado da tool
-    # Esse encadeamento é obrigatório pelo protocolo de tool use —
-    # sem ele o modelo não sabe que a tool já foi chamada e tenta chamá-la de novo.
-    # A mensagem do assistente é convertida para dict explicitamente para garantir
-    # compatibilidade entre provedores (LiteLLM, OpenAI, DeepSeek, etc.).
+    # Envia ao LLM apenas os campos essenciais para justificar a recomendação.
+    # Toda a formatação de duração, datas, tipos, etc. já foi feita pelo Python acima.
+    titulos_para_llm = [
+        {
+            "id": i,
+            "title": r.get("title", ""),
+            "overview": r.get("overview", ""),
+            "genre_names": r.get("genre_names", ""),
+            "year": r.get("year", ""),
+            "vote_average": r.get("vote_average", ""),
+        }
+        for i, r in enumerate(titulos_da_spec)
+    ]
+
     resposta_final = litellm.completion(
         model=_LLM_MODEL,
         api_key=_LLM_API_KEY,
@@ -314,34 +421,17 @@ def recomendar(preferencia: str) -> list[dict]:
             {
                 "role": "system",
                 "content": (
-                    "Você é um curador de filmes e séries. Com base nos títulos reais "
-                    "fornecidos pela tool, selecione os mais relevantes para o pedido "
-                    "do usuário e retorne um JSON com a chave 'titulos'. "
-                    "Cada item deve ter: titulo, tipo ('filme' ou 'série'), ano (inteiro), "
-                    "generos (lista de strings), sinopse, nota (float ou null), "
-                    "poster_url (string ou null), backdrop_url (string ou null), motivo (por que recomenda este título), "
-                    "duracao (string formatada ou null), "
-                    "data_lancamento (string com mês por extenso em português e ano, ex: 'Julho 2025', "
-                    "extraído do campo air_date no formato 'YYYY-MM-DD'; se air_date for null ou vazio, defina como null), "
-                    "streaming_providers (string com nomes dos serviços separados por vírgula, ou null). "
-                    "Para filmes, formate duracao a partir de runtime_minutes: ex. '1h 52min'. "
-                    "Para séries, formate duracao combinando number_of_seasons, number_of_episodes "
-                    "e episode_runtime_minutes: ex. '3 temporadas · 36 eps · ~45 min/ep'. "
-                    "Se episode_runtime_minutes for null ou ausente, omita essa parte: ex. '3 temporadas · 36 eps'. "
-                    "Se todos os dados de duração forem null, defina duracao como null. "
-                    "Copie streaming_providers exatamente como recebido (ex: 'Netflix, Amazon Prime Video'), "
-                    "ou null se o campo estiver ausente ou vazio. "
-                    "in_theaters: booleano (true/false) copiado do campo in_theaters; use false se ausente. "
-                    "theater_end_date: string no formato 'DD/MM/YYYY' convertida a partir do campo theater_end_date "
-                    "(formato 'YYYY-MM-DD'), ou null se o campo estiver ausente, vazio ou in_theaters for false. "
-                    "Responda APENAS com o JSON, sem texto extra. "
-                    "Responda sempre em português. "
-                    "Se a sinopse de algum título estiver em inglês, traduza-a para o português antes de exibir."
+                    "Você é um curador de filmes e séries. "
+                    "Recebeu uma lista de títulos reais do data lake. "
+                    "Para cada título, escreva um motivo curto (1-2 frases) explicando "
+                    "por que ele é uma boa recomendação para o pedido do usuário. "
+                    "Retorne um JSON com a chave 'titulos'. "
+                    "Cada item deve ter APENAS: id (inteiro, índice do título na lista), "
+                    "motivo (string em português). "
+                    "Responda APENAS com o JSON, sem texto extra."
                 ),
             },
             {"role": "user", "content": preferencia},
-            # Inclui a mensagem anterior do modelo (com a tool_call) no histórico.
-            # Convertido para dict para compatibilidade entre provedores via LiteLLM.
             {
                 "role": "assistant",
                 "content": resposta.choices[0].message.content,
@@ -358,10 +448,8 @@ def recomendar(preferencia: str) -> list[dict]:
             },
             {
                 "role": "tool",
-                "tool_call_id": tool_call.id,  # vincula o resultado à tool_call anterior
-                # Serializa a lista de títulos do Athena como JSON para o modelo ler.
-                # default=str: converte tipos não-serializáveis (ex: Timestamp) para string.
-                "content": json.dumps(titulos_da_spec, ensure_ascii=False, default=str),
+                "tool_call_id": tool_call.id,
+                "content": json.dumps(titulos_para_llm, ensure_ascii=False, default=str),
             },
         ],
     )
@@ -369,22 +457,23 @@ def recomendar(preferencia: str) -> list[dict]:
     conteudo = resposta_final.choices[0].message.content or ""
     conteudo = conteudo.strip()
 
-    # O modelo às vezes devolve o JSON envolto em ```json ... ``` mesmo sendo instruído a não
-    # fazer isso. Este bloco remove esse envoltório (markdown code fence) antes de parsear.
-    # Exemplo de resposta com envoltório:
-    #   ```json
-    #   {"titulos": [...]}
-    #   ```
     if conteudo.startswith("```"):
         conteudo = conteudo.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
 
     if not conteudo:
-        return []  # modelo retornou string vazia — não há recomendações
+        for reg in registros_formatados:
+            reg["motivo"] = ""
+        return registros_formatados
 
-    # Faz o parse do JSON retornado pelo modelo
     dados = json.loads(conteudo)
-    # Retorna apenas a lista de títulos (dentro da chave "titulos")
-    return dados.get("titulos", [])
+    motivos_llm = dados.get("titulos", [])
+
+    # Merge: adiciona o motivo do LLM ao registro já formatado pelo Python
+    motivos_por_id = {item["id"]: item.get("motivo", "") for item in motivos_llm if "id" in item}
+    for i, reg in enumerate(registros_formatados):
+        reg["motivo"] = motivos_por_id.get(i, "")
+
+    return registros_formatados
 
 
 def limpar_duracao(raw: str) -> str:
