@@ -19,7 +19,7 @@ Isola a camada de ingestão (HTTP → S3) da camada de transformação (S3 → P
    - **`skip_weekly=True`** (modo legado — referências apenas): pula o loop de discover.
    - Sem flags: coleta tudo.
 4. Para dados de referência (gêneros, idiomas/países, plataformas): faz uma chamada à API e salva um único arquivo JSON no S3 SOR, depois aciona o Glue ETL.
-5. Para dados de discover: itera por cada ano (`start_year` padrão = ano atual; `end_year` padrão = ano atual, se não fornecidos no evento), faz requisições paginadas à API, salva um arquivo JSON por ano no S3 SOR e aciona o Glue ETL para aquele ano.
+5. Para dados de discover: itera por cada ano (`start_year` padrão = ano atual; `end_year` padrão = ano atual, se não fornecidos no evento), faz requisições paginadas à API, salva um arquivo JSON por página no S3 SOR (`pagina_001.json`, `pagina_002.json`, ...) e aciona o Glue ETL para aquele ano.
 6. Para filmes (`content_type="movie"`), após o loop de discover, coleta também os filmes em cartaz nos cinemas via `collect_now_playing_data()`: pagina o endpoint `/movie/now_playing`, extrai as datas da janela teatral (`theater_start_date`, `theater_end_date`) e salva os resultados no S3 SOR, depois aciona o Glue ETL com `table_type="now_playing"`. Esse passo é condicional: só ocorre se `table_now_playing` estiver presente no evento.
 
 ## Entradas e saídas
@@ -41,7 +41,7 @@ Isola a camada de ingestão (HTTP → S3) da camada de transformação (S3 → P
 | `collect_discover_data(...)` | Coleta filmes/séries populares de um ano (paginado) |
 | `collect_now_playing_data(...)` | Coleta filmes em cartaz nos cinemas no Brasil (`region=BR`, paginado), extrai datas de janela teatral e salva no S3 SOR |
 
-## Funções compartilhadas (`shared/`)
+## Funções compartilhadas (`shared_utils/`)
 
 | Função | Origem | Responsabilidade |
 |---|---|---|

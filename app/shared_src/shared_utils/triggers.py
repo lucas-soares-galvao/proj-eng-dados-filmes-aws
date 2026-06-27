@@ -1,5 +1,7 @@
 """triggers.py — Função genérica para disparar jobs Glue downstream."""
 
+from __future__ import annotations
+
 import logging
 
 import boto3
