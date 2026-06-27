@@ -74,8 +74,9 @@ Após o Athena retornar os resultados brutos, funções Python (`_formatar_regis
 | `agent.py` | `_formatar_registro(registro)` | Converte um registro bruto do Athena em dict formatado para o card (tipo, gêneros, duração, data, nota, etc.) |
 | `agent.py` | `limpar_duracao(raw)` | Remove fragmentos `~null` de strings de duração (legado — novas durações são formatadas por `_formatar_duracao_titulo`) |
 | `app.py` | Interface Streamlit | Orquestra a UI: autenticação, busca assíncrona e exibição de resultados |
-| `componentes.py` | `carregar_css()`, `renderizar_card()`, `renderizar_grid()`, `renderizar_rodape()` | Helpers de renderização HTML com escape contra XSS |
-| `static/estilos.css` | CSS consolidado | Estilos do login e página principal (grid, cards, responsivo) |
+| `componentes.py` | `carregar_css_login()`, `carregar_css_principal()`, `renderizar_card()`, `renderizar_grid()`, `renderizar_rodape()`, `renderizar_rodape_login()` | Helpers de renderização HTML com escape contra XSS |
+| `static/login.css` | CSS da tela de login | Estilos específicos da tela de autenticação |
+| `static/principal.css` | CSS da página principal | Estilos do grid, cards e layout responsivo |
 
 ## Deploy
 
