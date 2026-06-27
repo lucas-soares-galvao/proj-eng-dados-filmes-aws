@@ -17,7 +17,7 @@ O usuário final interage apenas com o aplicativo: digita o que gosta ("filmes d
 ## Fluxo geral
 
 ```
-Todos os dias, automaticamente:
+Toda semana, automaticamente:
 
   [Agendador] ──► [Coletor de dados] ──► [Transformador] ──► [Validador]
                                                     │
@@ -116,7 +116,8 @@ python -m venv .venv
 source .venv/bin/activate        # Linux/Mac
 .venv\Scripts\activate           # Windows
 
-pip install -r requirements-dev.txt
+pip install pytest pytest-cov ruff mypy bandit
+for req in app/*/requirements.txt test/*/requirements_tests.txt; do pip install -r "$req"; done
 ```
 
 ### Rodando os testes

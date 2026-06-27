@@ -376,15 +376,15 @@ def buscar_titulos_spec(filtro_where: str, limite: int = 10) -> list[dict]:
 
 
 # ==============================================================================
-# PASSO 1 + 3: Orquestração do agente (função principal)
+# PASSO 1 + 2 + formatação: Orquestração do agente (função principal)
 # ==============================================================================
 
 def recomendar(preferencia: str) -> list[dict]:
     """
-    Orquestra os 3 passos do agente e retorna uma lista de recomendações.
+    Orquestra os 2 passos do agente e retorna uma lista de recomendações.
 
     Esta é a única função chamada pelo app.py. Ela coordena todo o fluxo:
-    LLM extrai filtros → Athena consulta → LLM formata recomendações.
+    LLM extrai filtros → Athena consulta → formatação Python.
 
     Args:
         preferencia: Texto em linguagem natural do usuário.

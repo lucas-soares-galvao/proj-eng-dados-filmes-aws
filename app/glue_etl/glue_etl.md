@@ -58,9 +58,9 @@ Igual ao fluxo estático (sem partição, sem acionar Details). Diferencial: `re
 | `write_parquet_to_sot(df, bucket, table_name, database, partition_cols, mode)` | Escreve Parquet e registra no Glue Catalog via AWS Wrangler |
 | `derive_canonical_name(name)` | Padroniza um nome de plataforma de streaming (ex: "Netflix Standard with Ads" → "Netflix"); usada internamente por `read_from_sor()` |
 
-## Funções compartilhadas (`shared/`)
+## Funções compartilhadas (`shared_utils/`)
 
-Importadas do pacote `shared`, reutilizadas por múltiplos componentes do pipeline:
+Importadas do pacote `shared_utils`, reutilizadas por múltiplos componentes do pipeline:
 
 | Função | Origem | Responsabilidade |
 |---|---|---|

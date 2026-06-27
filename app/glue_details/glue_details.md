@@ -51,9 +51,9 @@ O Glue AGG só pode rodar após todos os detalhes de filmes e séries de todos o
 | `repair_watch_providers_duplicates(...)` | Lê a partição `year` via S3, aplica `drop_duplicates(id, provider_type, provider_id)` mantendo o `dt_atualizacao` mais recente e regrava apenas se houver mudanças |
 | `repair_details_duplicates(...)` | Lê a partição `year` via S3, aplica `drop_duplicates(id)` mantendo o registro com `dt_processamento` mais recente e regrava apenas se houver mudanças |
 
-## Funções compartilhadas (`shared/`)
+## Funções compartilhadas (`shared_utils/`)
 
-Importadas do pacote `shared`, reutilizadas por múltiplos componentes do pipeline:
+Importadas do pacote `shared_utils`, reutilizadas por múltiplos componentes do pipeline:
 
 | Função | Origem | Responsabilidade |
 |---|---|---|
