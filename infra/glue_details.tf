@@ -10,7 +10,7 @@ resource "aws_glue_job" "details_job_pythonshell" {
   command {
     script_location = "s3://${local.envs.s3_bucket_aux}/${local.tmdb_prefix}/${local.envs.glue_details_job_name}/app/main.py"
     name            = "pythonshell"
-    python_version  = "3"
+    python_version  = "3.9"
   }
 
   notification_property {

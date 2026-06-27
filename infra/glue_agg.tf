@@ -11,7 +11,7 @@ resource "aws_glue_job" "agg_job_pythonshell" {
     # Script principal do job armazenado no bucket auxiliar.
     script_location = "s3://${local.envs.s3_bucket_aux}/${local.tmdb_prefix}/${local.envs.glue_agg_job_name}/app/main.py"
     name            = "pythonshell"
-    python_version  = "3"
+    python_version  = "3.9"
   }
 
   notification_property {
