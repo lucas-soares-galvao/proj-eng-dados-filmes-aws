@@ -16,7 +16,7 @@ resource "aws_glue_job" "etl_job_pythonshell" {
     # O Glue baixa e executa este arquivo quando o job inicia.
     script_location = "s3://${local.envs.s3_bucket_aux}/${local.tmdb_prefix}/${local.envs.glue_etl_job_name}/app/main.py"
     name            = "pythonshell"
-    python_version  = "3.9"
+    python_version  = "3"
   }
 
   notification_property {
