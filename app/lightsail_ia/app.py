@@ -10,6 +10,7 @@ from pathlib import Path
 
 import boto3
 import streamlit as st
+import streamlit.components.v1 as components
 import watchtower
 from agent import recomendar
 from componentes import (
@@ -55,7 +56,14 @@ if _log_group:
 
 _executor = ThreadPoolExecutor(max_workers=2)
 _MAX_CONSULTAS_POR_HORA = 20
-_historico_por_ip: dict[str, list[float]] = {}
+
+
+@st.cache_resource
+def _criar_historico_por_ip() -> dict[str, list[float]]:
+    return {}
+
+
+_historico_por_ip = _criar_historico_por_ip()
 
 
 def _obter_ip_cliente() -> str:
@@ -70,12 +78,11 @@ def _consultas_na_ultima_hora(ip: str) -> int:
     return len(historico)
 
 
-def _minutos_para_liberar(ip: str) -> int:
+def _segundos_para_liberar(ip: str) -> int:
     historico = _historico_por_ip.get(ip, [])
     if not historico:
         return 0
-    segundos = historico[0] + 3600 - time.time()
-    return max(1, math.ceil(segundos / 60))
+    return max(0, math.ceil(historico[0] + 3600 - time.time()))
 
 
 st.set_page_config(page_title="FilmBot", page_icon="🎬", layout="wide")
@@ -140,14 +147,43 @@ _consultas_feitas = _consultas_na_ultima_hora(_ip_cliente)
 _restantes = _MAX_CONSULTAS_POR_HORA - _consultas_feitas
 
 if _restantes <= 0:
-    _minutos = _minutos_para_liberar(_ip_cliente)
-    _unidade = "minuto" if _minutos == 1 else "minutos"
-    st.markdown(f"""
+    _segundos = _segundos_para_liberar(_ip_cliente)
+    components.html(f"""
+    <style>
+      body {{ margin: 0; padding: 0; background: transparent; font-family: 'Source Sans Pro', sans-serif; }}
+      .msg-aviso {{
+        background: rgba(250,204,21,0.1);
+        border: 1px solid rgba(250,204,21,0.3);
+        border-radius: 10px;
+        padding: 12px 16px;
+        color: #fbbf24;
+        font-size: 14px;
+        max-width: 50%;
+      }}
+      .tempo-countdown {{ font-weight: 600; }}
+    </style>
     <div class="msg-aviso">
       ⚠️ Limite de consultas atingido. Disponível novamente em
-      <span class="tempo-countdown">{_minutos} {_unidade}</span>.
+      <span class="tempo-countdown" id="countdown"></span>.
     </div>
-    """, unsafe_allow_html=True)
+    <script>
+      let restante = {_segundos};
+      const el = document.getElementById('countdown');
+      function atualizar() {{
+        if (restante <= 0) {{
+          el.textContent = '00:00';
+          window.parent.location.reload();
+          return;
+        }}
+        const m = Math.floor(restante / 60);
+        const s = restante % 60;
+        el.textContent = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+        restante--;
+      }}
+      atualizar();
+      setInterval(atualizar, 1000);
+    </script>
+    """, height=55)
 else:
     st.caption(f"Consultas restantes: {_restantes}/{_MAX_CONSULTAS_POR_HORA} por hora")
 

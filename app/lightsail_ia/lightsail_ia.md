@@ -42,7 +42,7 @@ Após o Athena retornar os resultados brutos, funções puras em `formatacao.py`
 - Tema escuro com CSS customizado
 - Grid responsivo de cards (largura mínima 260px por coluna, preenche a tela automaticamente)
 - Botão "Sair" no cabeçalho para encerrar a sessão autenticada
-- **Rate limiting por IP:** máximo de 20 consultas por hora (janela deslizante). O contador é exibido abaixo do campo de texto; ao atingir o limite, o botão "Recomendar" é desabilitado e uma mensagem de aviso mostra quantos minutos faltam para liberar (com animação pulse). O histórico de timestamps é mantido em dict no nível do módulo (`_historico_por_ip`), indexado pelo IP do cliente via `X-Forwarded-For` — sobrevive a reloads da página (reseta apenas no restart do processo Streamlit, ex: deploy)
+- **Rate limiting por IP:** máximo de 20 consultas por hora (janela deslizante). O contador é exibido abaixo do campo de texto; ao atingir o limite, o botão "Recomendar" é desabilitado e um countdown dinâmico MM:SS (JavaScript client-side via `st.components.v1.html`) mostra quanto tempo falta em tempo real, decrementando a cada segundo. Ao chegar em 00:00, a página recarrega automaticamente. O histórico de timestamps é mantido em dict no nível do módulo (`_historico_por_ip`), indexado pelo IP do cliente via `X-Forwarded-For` — sobrevive a reloads da página (reseta apenas no restart do processo Streamlit, ex: deploy)
 - Botão "Cancelar" durante a busca: a recomendação roda em thread separada (`ThreadPoolExecutor`) com polling de 500ms, permitindo ao usuário cancelar a qualquer momento sem esperar a resposta completa
 - Logging de erros: exceções na busca são registradas via `logging.exception()` e enviadas ao CloudWatch Logs (quando `CLOUDWATCH_LOG_GROUP` está configurada) para diagnóstico em produção
 - Cada card exibe:
@@ -76,7 +76,7 @@ Após o Athena retornar os resultados brutos, funções puras em `formatacao.py`
 | `formatacao.py` | `_formatar_tipo()`, `_formatar_generos()`, `_formatar_duracao_titulo()`, `_formatar_data_lancamento()`, `_formatar_theater_end_date()`, `_formatar_nota()` | Funções puras de formatação de campos individuais |
 | `app.py` | `_obter_ip_cliente()` | Obtém o IP do cliente via header `X-Forwarded-For` (repassado pelo Caddy) |
 | `app.py` | `_consultas_na_ultima_hora(ip)` | Conta consultas na última hora (janela deslizante) para o IP fornecido e limpa registros expirados |
-| `app.py` | `_minutos_para_liberar(ip)` | Calcula quantos minutos faltam até a consulta mais antiga expirar (arredondado para cima) |
+| `app.py` | `_segundos_para_liberar(ip)` | Calcula quantos segundos faltam até a consulta mais antiga expirar |
 | `app.py` | Interface Streamlit | Orquestra a UI: autenticação, rate limiting, busca assíncrona e exibição de resultados |
 | `componentes.py` | `carregar_css_login()`, `carregar_css_principal()`, `renderizar_card()`, `renderizar_grid()`, `renderizar_rodape()`, `renderizar_rodape_login()` | Helpers de renderização HTML com escape contra XSS |
 | `static/login.css` | CSS da tela de login | Estilos específicos da tela de autenticação |
