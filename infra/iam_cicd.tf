@@ -347,6 +347,8 @@ resource "aws_iam_policy" "cicd_compute" {
           "glue:GetJobs",
           "glue:UpdateJob",
           "glue:BatchGetJobs",
+          "glue:StartJobRun",
+          "glue:GetJobRun",
           "glue:TagResource",
           "glue:UntagResource",
           "glue:GetTags",
