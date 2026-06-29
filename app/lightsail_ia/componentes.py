@@ -40,8 +40,6 @@ def renderizar_card(t: dict) -> str:
     rent_buy_providers = t.get("aluguel_compra") or ""
     in_theaters = t.get("in_theaters") or False
     theater_end_date = html.escape(t.get("theater_end_date") or "")
-    elenco = html.escape(t.get("elenco") or "")
-    diretor = html.escape(t.get("diretor") or "")
     certificacao = html.escape(t.get("certificacao") or "")
     trailer_url = t.get("trailer_url") or ""
 
