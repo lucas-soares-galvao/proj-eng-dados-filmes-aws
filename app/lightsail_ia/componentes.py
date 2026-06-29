@@ -141,9 +141,9 @@ def renderizar_card(t: dict) -> str:
       <div class="card-body">
         <strong>{titulo}</strong>
         <span class="card-subtitle">
-          &nbsp;({ano}) — {tipo}
+          &nbsp;({ano}) — {tipo} {certificacao_html}
         </span>
-        <div class="generos-container">{generos_html} {certificacao_html}</div>
+        <div class="generos-container">{generos_html}</div>
         {nota_html}
         {duracao_html}
         {data_html}
