@@ -17,6 +17,12 @@ O pipeline mensal processa apenas dados novos (delta). Quando é necessário re-
 | `backfill_data_quality.py` | Aciona validação de qualidade para todas as tabelas | Glue Data Quality | — |
 | `backfill_traducao.py` | Traduz title/overview para português via Google Translate | S3 (direto) | awswrangler, pandas, deep_translator |
 
+## Pré-requisitos
+
+- Python 3.12+ com as dependências do projeto instaladas
+- Credenciais AWS configuradas (`aws configure` ou variáveis de ambiente)
+- Variáveis de ambiente específicas de cada script documentadas em sua docstring
+
 ## Como executar
 
 ### Via GitHub Actions (recomendado)
