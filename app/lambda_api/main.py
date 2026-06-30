@@ -81,6 +81,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     end_year       = int(event.get("end_year",   current_year))
     loop_end_year  = int(event.get("loop_end_year", end_year))
 
+    # Modo mensal: ignora os anos do payload e força o ano anterior.
+    # O EventBridge envia um payload padrão com os anos do ciclo corrente, mas o modo mensal
+    # sempre quer re-coletar o ano anterior (ex: em 2025, recoleta o discover de 2024).
+    # Sobrescrever aqui evita criar um payload separado para o trigger mensal.
     if only_monthly_tables:
         start_year = current_year - 1
         end_year = current_year - 1

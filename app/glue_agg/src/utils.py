@@ -370,6 +370,7 @@ movie_rent_buy AS (
     GROUP BY id
 ),
 
+-- Mesma lógica de aluguel/compra para séries.
 tv_rb_ranked AS (
     SELECT wp.id, r.canonical_name, MIN(r.priority_br) AS min_priority
     FROM tv_rb_recent wp
@@ -389,6 +390,7 @@ tv_rent_buy AS (
     GROUP BY id
 ),
 
+-- Provedores de aluguel/compra unificados: filmes e séries num único conjunto com media_type como chave.
 rent_buy AS (
     SELECT id, 'movie' AS media_type, rent_buy_providers FROM movie_rent_buy
     UNION ALL
