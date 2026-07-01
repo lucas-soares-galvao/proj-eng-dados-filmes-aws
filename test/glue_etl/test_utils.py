@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
-from src.utils import _adicionar_name_pt_countries, _adicionar_name_pt_languages, derive_canonical_name, get_parameters_glue, get_resolved_option, read_from_sor, write_parquet_to_sot
+from src.utils import _adicionar_name_pt_countries, _adicionar_name_pt_languages, derive_canonical_name, get_parameters_glue, read_from_sor, write_parquet_to_sot
 
 
 # ---------------------------------------------------------------------------

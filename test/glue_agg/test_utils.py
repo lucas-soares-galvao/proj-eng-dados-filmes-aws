@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.utils import get_parameters_glue, get_resolved_option, run_athena_query, write_parquet_to_spec
+from src.utils import get_parameters_glue, run_athena_query, write_parquet_to_spec
 
 
 class TestRunAthenaQuery:
